@@ -1,2 +1,1 @@
 """Coaster Capital API."""
-

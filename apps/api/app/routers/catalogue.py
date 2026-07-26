@@ -6,10 +6,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import crud, models, schemas
+from app.auth import require_roles
 from app.database import get_db
 
 router = APIRouter(prefix="/v1", tags=["catalogue"])
 DbSession = Annotated[Session, Depends(get_db)]
+Editor = Annotated[
+    models.User,
+    Depends(require_roles(models.UserRole.ADMIN, models.UserRole.EDITOR)),
+]
 
 
 @router.get("/countries", response_model=list[schemas.CountryRead])
@@ -37,14 +42,23 @@ def parks(
 
 
 @router.post("/parks", response_model=schemas.ParkRead, status_code=status.HTTP_201_CREATED)
-def create_park(data: schemas.ParkCreate, db: DbSession) -> models.Park:
-    return crud.commit(
+def create_park(data: schemas.ParkCreate, db: DbSession, actor: Editor) -> models.Park:
+    item = crud.commit(
         db,
         models.Park(
             **data.model_dump(exclude={"website_url"}),
             website_url=str(data.website_url) if data.website_url else None,
         ),
     )
+    crud.record_audit(
+        db,
+        actor=actor,
+        action="create",
+        entity_type="park",
+        entity_id=item.id,
+        changes=data.model_dump(mode="json"),
+    )
+    return item
 
 
 @router.get("/parks/{park_id}", response_model=schemas.ParkRead)
@@ -61,15 +75,34 @@ def park(park_id: uuid.UUID, db: DbSession) -> models.Park:
 
 
 @router.patch("/parks/{park_id}", response_model=schemas.ParkRead)
-def update_park(park_id: uuid.UUID, data: schemas.ParkUpdate, db: DbSession) -> models.Park:
-    return crud.commit(db, crud.apply_update(crud.get_or_404(db, models.Park, park_id), data))
+def update_park(
+    park_id: uuid.UUID, data: schemas.ParkUpdate, db: DbSession, actor: Editor
+) -> models.Park:
+    item = crud.commit(db, crud.apply_update(crud.get_or_404(db, models.Park, park_id), data))
+    crud.record_audit(
+        db,
+        actor=actor,
+        action="update",
+        entity_type="park",
+        entity_id=item.id,
+        changes=data.model_dump(mode="json", exclude_unset=True),
+    )
+    return item
 
 
 @router.delete("/parks/{park_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_park(park_id: uuid.UUID, db: DbSession) -> Response:
+def delete_park(park_id: uuid.UUID, db: DbSession, actor: Editor) -> Response:
     item = crud.get_or_404(db, models.Park, park_id)
     item.is_active = False
     db.commit()
+    crud.record_audit(
+        db,
+        actor=actor,
+        action="deactivate",
+        entity_type="park",
+        entity_id=item.id,
+        changes={"is_active": False},
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -89,28 +122,49 @@ def manufacturers(
     status_code=status.HTTP_201_CREATED,
 )
 def create_manufacturer(
-    data: schemas.ManufacturerCreate, db: DbSession
+    data: schemas.ManufacturerCreate, db: DbSession, actor: Editor
 ) -> models.Manufacturer:
-    return crud.commit(
+    item = crud.commit(
         db,
         models.Manufacturer(
             **data.model_dump(exclude={"website_url"}),
             website_url=str(data.website_url) if data.website_url else None,
         ),
     )
+    crud.record_audit(
+        db,
+        actor=actor,
+        action="create",
+        entity_type="manufacturer",
+        entity_id=item.id,
+        changes=data.model_dump(mode="json"),
+    )
+    return item
 
 
 @router.patch("/manufacturers/{manufacturer_id}", response_model=schemas.ManufacturerRead)
 def update_manufacturer(
-    manufacturer_id: uuid.UUID, data: schemas.ManufacturerUpdate, db: DbSession
+    manufacturer_id: uuid.UUID,
+    data: schemas.ManufacturerUpdate,
+    db: DbSession,
+    actor: Editor,
 ) -> models.Manufacturer:
-    return crud.commit(
+    item = crud.commit(
         db,
         crud.apply_update(
             crud.get_or_404(db, models.Manufacturer, manufacturer_id),
             data,
         ),
     )
+    crud.record_audit(
+        db,
+        actor=actor,
+        action="update",
+        entity_type="manufacturer",
+        entity_id=item.id,
+        changes=data.model_dump(mode="json", exclude_unset=True),
+    )
+    return item
 
 
 @router.get("/coasters", response_model=schemas.CoasterPage)
@@ -121,17 +175,23 @@ def coasters(
     query: Annotated[str | None, Query(max_length=100)] = None,
     park_id: uuid.UUID | None = None,
 ) -> schemas.CoasterPage:
-    return crud.list_coasters(
-        db, limit=limit, offset=offset, query=query, park_id=park_id
-    )
+    return crud.list_coasters(db, limit=limit, offset=offset, query=query, park_id=park_id)
 
 
 @router.post("/coasters", response_model=schemas.CoasterRead, status_code=status.HTTP_201_CREATED)
-def create_coaster(data: schemas.CoasterCreate, db: DbSession) -> models.Coaster:
+def create_coaster(data: schemas.CoasterCreate, db: DbSession, actor: Editor) -> models.Coaster:
     crud.get_or_404(db, models.Park, data.park_id)
     if data.manufacturer_id:
         crud.get_or_404(db, models.Manufacturer, data.manufacturer_id)
     item = crud.commit(db, models.Coaster(**data.model_dump()))
+    crud.record_audit(
+        db,
+        actor=actor,
+        action="create",
+        entity_type="coaster",
+        entity_id=item.id,
+        changes=data.model_dump(mode="json"),
+    )
     statement = (
         select(models.Coaster)
         .options(*crud.coaster_load_options())
@@ -142,10 +202,19 @@ def create_coaster(data: schemas.CoasterCreate, db: DbSession) -> models.Coaster
 
 @router.patch("/coasters/{coaster_id}", response_model=schemas.CoasterRead)
 def update_coaster(
-    coaster_id: uuid.UUID, data: schemas.CoasterUpdate, db: DbSession
+    coaster_id: uuid.UUID,
+    data: schemas.CoasterUpdate,
+    db: DbSession,
+    actor: Editor,
 ) -> models.Coaster:
-    item = crud.commit(
-        db, crud.apply_update(crud.get_or_404(db, models.Coaster, coaster_id), data)
+    item = crud.commit(db, crud.apply_update(crud.get_or_404(db, models.Coaster, coaster_id), data))
+    crud.record_audit(
+        db,
+        actor=actor,
+        action="update",
+        entity_type="coaster",
+        entity_id=item.id,
+        changes=data.model_dump(mode="json", exclude_unset=True),
     )
     statement = (
         select(models.Coaster)

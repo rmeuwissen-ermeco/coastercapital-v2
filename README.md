@@ -43,9 +43,9 @@ Open <http://127.0.0.1:8000/health> or <http://127.0.0.1:8000/docs>.
 
 ## Current status
 
-Run 2 adds the first working vertical slice: catalogue migrations, validated CRUD,
-global search, live statistics, seed data and a functional admin data screen.
-Authentication, provenance workflows and AI extraction follow in later checkpoints.
+Run 3 secures the working catalogue with Argon2 login credentials, role-based write
+access, HttpOnly sessions, protected admin routes and an append-only audit history.
+Provenance workflows and AI extraction follow in later checkpoints.
 
 ## Managed deployment
 

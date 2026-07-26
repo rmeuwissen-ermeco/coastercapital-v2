@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./coastercapital.db"
     cors_origins: list[str] = ["http://localhost:3000"]
     auto_create_schema: bool = True
+    jwt_secret: str = "development-only-secret-change-me"
+    access_token_minutes: int = 480
+    admin_email: str | None = None
+    admin_password: str | None = None
 
     @field_validator("database_url", mode="before")
     @classmethod

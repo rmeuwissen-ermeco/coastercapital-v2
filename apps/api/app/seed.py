@@ -4,12 +4,32 @@ from datetime import date
 
 from sqlalchemy import select
 
+from app.auth import hash_password, verify_password
+from app.config import get_settings
 from app.database import SessionLocal
-from app.models import Coaster, CoasterStatus, Country, Manufacturer, Park
+from app.models import Coaster, CoasterStatus, Country, Manufacturer, Park, User, UserRole
 
 
 def seed() -> None:
+    settings = get_settings()
     with SessionLocal.begin() as db:
+        if settings.admin_email and settings.admin_password:
+            email = settings.admin_email.strip().lower()
+            admin = db.scalar(select(User).where(User.email == email))
+            if admin is None:
+                db.add(
+                    User(
+                        email=email,
+                        password_hash=hash_password(settings.admin_password),
+                        role=UserRole.ADMIN,
+                    )
+                )
+            else:
+                admin.role = UserRole.ADMIN
+                admin.is_active = True
+                if not verify_password(settings.admin_password, admin.password_hash):
+                    admin.password_hash = hash_password(settings.admin_password)
+
         country = db.scalar(select(Country).where(Country.code == "NL"))
         if country is None:
             country = Country(code="NL", name="Netherlands")

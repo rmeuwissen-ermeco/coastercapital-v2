@@ -40,3 +40,11 @@ Run 2 implements the first catalogue core on these boundaries: PostgreSQL-compat
 migrations, countries, parks, manufacturers and coasters, validated versioned CRUD,
 search and a live administration screen. Provenance, authentication, crawling and
 commercial API access remain separate later runs.
+
+## Run 3 security boundary
+
+- Anonymous clients can read the public catalogue and search endpoints.
+- Editor and admin roles can change canonical catalogue records.
+- Only administrators can read the audit history.
+- Browser sessions use an HttpOnly cookie and a same-origin Next.js proxy.
+- Every catalogue mutation records actor, action, entity, timestamp and changed fields.

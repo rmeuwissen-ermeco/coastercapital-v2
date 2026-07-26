@@ -10,9 +10,7 @@ from app import models, schemas
 from app.database import Base
 
 
-def get_or_404[ModelT: Base](
-    db: Session, model: type[ModelT], object_id: uuid.UUID
-) -> ModelT:
+def get_or_404[ModelT: Base](db: Session, model: type[ModelT], object_id: uuid.UUID) -> ModelT:
     item = db.get(model, object_id)
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
@@ -37,6 +35,27 @@ def apply_update[ModelT: Base](item: ModelT, data: BaseModel) -> ModelT:
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(item, field, str(value) if field == "website_url" and value else value)
     return item
+
+
+def record_audit(
+    db: Session,
+    *,
+    actor: models.User,
+    action: str,
+    entity_type: str,
+    entity_id: uuid.UUID,
+    changes: dict | None,
+) -> None:
+    db.add(
+        models.AuditEvent(
+            actor_id=actor.id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            changes=changes,
+        )
+    )
+    db.commit()
 
 
 def list_parks(db: Session, *, limit: int, offset: int, query: str | None) -> schemas.ParkPage:
