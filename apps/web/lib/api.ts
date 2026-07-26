@@ -56,16 +56,33 @@ export type SourceEvidence = {
   source_url: string;
   source_label: string | null;
   retrieved_at: string;
+  asserted_value: unknown;
+  source_confidence: number | null;
+  is_primary: boolean;
 };
 
 export type FieldProposal = {
   id: string;
   field_name: string;
   proposed_value: unknown;
+  reviewed_value: unknown;
   current_value: unknown;
   evidence_status: string;
-  proposal_status: "pending" | "accepted" | "rejected";
+  proposal_status:
+    | "pending"
+    | "accepted"
+    | "auto_accepted"
+    | "rejected"
+    | "insufficient_evidence"
+    | "deferred"
+    | "disputed";
   confidence: number;
+  confidence_class: string;
+  automation_class: "A" | "B" | "C";
+  score_breakdown: Record<string, number> | null;
+  has_conflict: boolean;
+  auto_approval_eligible: boolean;
+  is_manual_override: boolean;
   rationale: string | null;
   evidence: SourceEvidence[];
 };
@@ -77,7 +94,11 @@ export type EnrichmentJob = {
   wikipedia_title: string | null;
   error_message: string | null;
   created_at: string;
-  coaster: Pick<Coaster, "id" | "name" | "slug">;
+  entity_type: "coaster" | "park" | "manufacturer";
+  entity_id: string;
+  entity_match_confidence: number | null;
+  entity: { id: string; name: string; slug: string };
+  coaster: Pick<Coaster, "id" | "name" | "slug"> | null;
   proposals: FieldProposal[];
 };
 

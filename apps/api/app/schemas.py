@@ -4,7 +4,10 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from app.models import (
+    AutomationClass,
     CoasterStatus,
+    ConfidenceClass,
+    EnrichmentEntityType,
     EnrichmentJobStatus,
     EvidenceStatus,
     ProposalStatus,
@@ -202,24 +205,38 @@ class FieldProposalRead(ORMModel):
     id: uuid.UUID
     field_name: str
     proposed_value: object | None
+    reviewed_value: object | None
     current_value: object | None
     evidence_status: EvidenceStatus
     proposal_status: ProposalStatus
     confidence: float
+    confidence_class: ConfidenceClass
+    automation_class: AutomationClass
+    score_breakdown: dict | None
+    has_conflict: bool
+    auto_approval_eligible: bool
+    is_manual_override: bool
     rationale: str | None
     reviewed_at: datetime | None
     evidence: list[SourceEvidenceRead]
 
 
-class EnrichmentCoasterRead(ORMModel):
+class EnrichmentEntityRead(BaseModel):
     id: uuid.UUID
     name: str
     slug: str
 
 
 class EnrichmentJobCreate(BaseModel):
-    coaster_id: uuid.UUID
+    entity_type: EnrichmentEntityType = EnrichmentEntityType.COASTER
+    entity_id: uuid.UUID | None = None
+    coaster_id: uuid.UUID | None = None
     wikidata_id: str | None = Field(default=None, pattern=r"^Q[1-9][0-9]*$")
+
+    @field_validator("entity_id")
+    @classmethod
+    def entity_identifier(cls, value: uuid.UUID | None) -> uuid.UUID | None:
+        return value
 
 
 class EnrichmentJobRead(ORMModel):
@@ -231,16 +248,34 @@ class EnrichmentJobRead(ORMModel):
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
-    coaster: EnrichmentCoasterRead
+    entity_type: EnrichmentEntityType
+    entity_id: uuid.UUID
+    entity_match_confidence: float | None
+    entity: EnrichmentEntityRead
+    coaster: EnrichmentEntityRead | None
     proposals: list[FieldProposalRead]
 
 
 class ProposalReview(BaseModel):
     decision: ProposalStatus
+    value: object | None = None
+    override_reason: str | None = Field(default=None, max_length=2000)
 
     @field_validator("decision")
     @classmethod
     def final_decision(cls, value: ProposalStatus) -> ProposalStatus:
-        if value == ProposalStatus.PENDING:
-            raise ValueError("Decision must be accepted or rejected")
+        if value in {ProposalStatus.PENDING, ProposalStatus.AUTO_ACCEPTED}:
+            raise ValueError("Decision must be a manual review outcome")
         return value
+
+
+class FieldDefinitionRead(BaseModel):
+    entity_type: EnrichmentEntityType
+    field_name: str
+    label: str
+    description: str
+    data_type: str
+    unit: str | None
+    automation_class: AutomationClass
+    minimum: float | None
+    maximum: float | None

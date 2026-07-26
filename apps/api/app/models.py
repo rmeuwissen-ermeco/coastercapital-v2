@@ -56,7 +56,31 @@ class EvidenceStatus(str, enum.Enum):
 class ProposalStatus(str, enum.Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
+    AUTO_ACCEPTED = "auto_accepted"
     REJECTED = "rejected"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    DEFERRED = "deferred"
+    DISPUTED = "disputed"
+
+
+class EnrichmentEntityType(str, enum.Enum):
+    COASTER = "coaster"
+    PARK = "park"
+    MANUFACTURER = "manufacturer"
+
+
+class ConfidenceClass(str, enum.Enum):
+    REJECT = "reject"
+    PROBABLY_INCORRECT = "probably_incorrect"
+    NEEDS_REVIEW = "needs_review"
+    PROBABLY_CORRECT = "probably_correct"
+    VERY_PROBABLY_CORRECT = "very_probably_correct"
+
+
+class AutomationClass(str, enum.Enum):
+    A = "A"
+    B = "B"
+    C = "C"
 
 
 class TimestampMixin:
@@ -209,9 +233,26 @@ class EnrichmentJob(Base, TimestampMixin):
     __tablename__ = "enrichment_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    coaster_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("coasters.id", ondelete="CASCADE"), index=True
+    coaster_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("coasters.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    park_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("parks.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    manufacturer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("manufacturers.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    entity_type: Mapped[EnrichmentEntityType] = mapped_column(
+        Enum(
+            EnrichmentEntityType,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        default=EnrichmentEntityType.COASTER,
+        index=True,
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    entity_match_confidence: Mapped[float | None] = mapped_column(Float)
     requested_by_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True
     )
@@ -230,11 +271,17 @@ class EnrichmentJob(Base, TimestampMixin):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    coaster: Mapped[Coaster] = relationship(back_populates="enrichment_jobs")
+    coaster: Mapped[Coaster | None] = relationship(back_populates="enrichment_jobs")
+    park: Mapped[Park | None] = relationship()
+    manufacturer: Mapped[Manufacturer | None] = relationship()
     requested_by: Mapped[User] = relationship()
     proposals: Mapped[list["FieldProposal"]] = relationship(
         back_populates="job", cascade="all, delete-orphan"
     )
+
+    @property
+    def entity(self) -> Coaster | Park | Manufacturer | None:
+        return self.coaster or self.park or self.manufacturer
 
 
 class FieldProposal(Base, TimestampMixin):
@@ -246,6 +293,7 @@ class FieldProposal(Base, TimestampMixin):
     )
     field_name: Mapped[str] = mapped_column(String(80), index=True)
     proposed_value: Mapped[object | None] = mapped_column(JSON)
+    reviewed_value: Mapped[object | None] = mapped_column(JSON)
     current_value: Mapped[object | None] = mapped_column(JSON)
     evidence_status: Mapped[EvidenceStatus] = mapped_column(
         Enum(
@@ -265,6 +313,27 @@ class FieldProposal(Base, TimestampMixin):
         index=True,
     )
     confidence: Mapped[float] = mapped_column(Float)
+    confidence_class: Mapped[ConfidenceClass] = mapped_column(
+        Enum(
+            ConfidenceClass,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        index=True,
+    )
+    automation_class: Mapped[AutomationClass] = mapped_column(
+        Enum(
+            AutomationClass,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        )
+    )
+    score_breakdown: Mapped[dict | None] = mapped_column(JSON)
+    has_conflict: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    auto_approval_eligible: Mapped[bool] = mapped_column(
+        Boolean, default=False, index=True
+    )
+    is_manual_override: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     rationale: Mapped[str | None] = mapped_column(Text)
     reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), index=True
@@ -292,9 +361,71 @@ class SourceEvidence(Base):
     source_type: Mapped[str] = mapped_column(String(50), index=True)
     source_url: Mapped[str] = mapped_column(String(1000))
     source_label: Mapped[str | None] = mapped_column(String(300))
+    asserted_value: Mapped[object | None] = mapped_column(JSON)
+    source_confidence: Mapped[float | None] = mapped_column(Float)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     retrieved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     raw_value: Mapped[object | None] = mapped_column(JSON)
 
     proposal: Mapped[FieldProposal] = relationship(back_populates="evidence")
+
+
+class ExternalIdentifier(Base, TimestampMixin):
+    __tablename__ = "external_identifiers"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[EnrichmentEntityType] = mapped_column(
+        Enum(
+            EnrichmentEntityType,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        index=True,
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    scheme: Mapped[str] = mapped_column(String(50), index=True)
+    value: Mapped[str] = mapped_column(String(500), index=True)
+    source_url: Mapped[str | None] = mapped_column(String(1000))
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "entity_type", "entity_id", "scheme", name="uq_external_identifier_entity_scheme"
+        ),
+    )
+
+
+class CanonicalOverride(Base, TimestampMixin):
+    __tablename__ = "canonical_overrides"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[EnrichmentEntityType] = mapped_column(
+        Enum(
+            EnrichmentEntityType,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        index=True,
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    field_name: Mapped[str] = mapped_column(String(80), index=True)
+    value: Mapped[object | None] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(Text)
+    created_by_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    created_by: Mapped[User] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "entity_type",
+            "entity_id",
+            "field_name",
+            name="uq_canonical_override_entity_field",
+        ),
+    )

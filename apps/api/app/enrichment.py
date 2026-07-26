@@ -13,8 +13,13 @@ WIKIPEDIA_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
 WIKIMEDIA_HEADERS = {
     "User-Agent": (
         "CoasterCapital/1.0 "
-        "(https://github.com/rmeuwissen-ermeco/coastercapital-v2; " 
-        "source-driven enrichment)"
+        "(https://github.com/rmeuwissen-ermeco/coastercapital-v2; "
+        "contact@ermeco.nl)"
+    ),
+    "Api-User-Agent": (
+        "CoasterCapital/1.0 "
+        "(https://github.com/rmeuwissen-ermeco/coastercapital-v2; "
+        "contact@ermeco.nl)"
     ),
     "Accept": "application/json",
 }
@@ -96,7 +101,9 @@ def fetch_candidates(
     client: httpx.Client | None = None,
 ) -> tuple[str, str | None, list[EvidenceCandidate]]:
     owns_client = client is None
-    http = client or httpx.Client(timeout=20, headers=WIKIMEDIA_HEADERS)
+    http = client or httpx.Client(
+        timeout=20, headers=WIKIMEDIA_HEADERS, follow_redirects=True
+    )
     try:
         qid = wikidata_id or _find_wikidata_id(http, coaster_name, park_name)
         entity_url = WIKIDATA_ENTITY.format(qid=qid)
@@ -120,6 +127,7 @@ def fetch_candidates(
 def _find_wikidata_id(http: httpx.Client, coaster_name: str, park_name: str) -> str:
     response = http.get(
         WIKIDATA_API,
+        headers=WIKIMEDIA_HEADERS,
         params={
             "action": "wbsearchentities",
             "search": f"{coaster_name} {park_name}",
@@ -127,7 +135,6 @@ def _find_wikidata_id(http: httpx.Client, coaster_name: str, park_name: str) -> 
             "format": "json",
             "limit": 5,
         },
-        headers=WIKIMEDIA_HEADERS,
     )
     response.raise_for_status()
     results = response.json().get("search", [])
