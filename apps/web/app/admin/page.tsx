@@ -21,7 +21,7 @@ export default function AdminPage() {
           </a>
           <Link href="/admin/data">Data</Link>
           <Link href="/admin/audit">Audit</Link>
-          <a href="#">Sources</a>
+          <Link href="/admin/enrichment">Enrichment</Link>
         </nav>
       </aside>
       <section className="admin-content">
@@ -42,12 +42,12 @@ export default function AdminPage() {
           <article>
             <span>Pending proposals</span>
             <strong>0</strong>
-            <Link href="/admin/audit">Open audit history</Link>
+            <Link href="/admin/enrichment">Review proposals</Link>
           </article>
           <article>
             <span>Source health</span>
             <strong>—</strong>
-            <a href="#">Connect first source</a>
+            <Link href="/admin/enrichment">Open source pipeline</Link>
           </article>
           <article>
             <span>API status</span>
@@ -63,7 +63,10 @@ export default function AdminPage() {
                 <h2>{title}</h2>
                 <p>{description}</p>
               </div>
-              <Link aria-label={`Open ${title}`} href="/admin/data">
+              <Link
+                aria-label={`Open ${title}`}
+                href={title === "Proposals" ? "/admin/enrichment" : "/admin/data"}
+              >
                 →
               </Link>
             </article>

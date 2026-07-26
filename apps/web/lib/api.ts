@@ -50,6 +50,37 @@ export type Coaster = {
   is_active: boolean;
 };
 
+export type SourceEvidence = {
+  id: string;
+  source_type: string;
+  source_url: string;
+  source_label: string | null;
+  retrieved_at: string;
+};
+
+export type FieldProposal = {
+  id: string;
+  field_name: string;
+  proposed_value: unknown;
+  current_value: unknown;
+  evidence_status: string;
+  proposal_status: "pending" | "accepted" | "rejected";
+  confidence: number;
+  rationale: string | null;
+  evidence: SourceEvidence[];
+};
+
+export type EnrichmentJob = {
+  id: string;
+  status: "pending" | "running" | "review" | "completed" | "failed";
+  wikidata_id: string | null;
+  wikipedia_title: string | null;
+  error_message: string | null;
+  created_at: string;
+  coaster: Pick<Coaster, "id" | "name" | "slug">;
+  proposals: FieldProposal[];
+};
+
 export type Page<T> = {
   items: T[];
   meta: { total: number; limit: number; offset: number };

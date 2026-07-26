@@ -43,9 +43,9 @@ Open <http://127.0.0.1:8000/health> or <http://127.0.0.1:8000/docs>.
 
 ## Current status
 
-Run 3 secures the working catalogue with Argon2 login credentials, role-based write
-access, HttpOnly sessions, protected admin routes and an append-only audit history.
-Provenance workflows and AI extraction follow in later checkpoints.
+Run 4 adds a review-first Wikidata and Wikipedia enrichment pipeline to the secured
+catalogue. Every proposed field value retains source evidence and confidence metadata;
+canonical data changes only after explicit approval and every decision is audited.
 
 ## Managed deployment
 

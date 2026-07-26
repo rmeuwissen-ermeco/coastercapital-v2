@@ -10,6 +10,7 @@ from app.database import Base, engine
 from app.routers.admin import router as admin_router
 from app.routers.authentication import router as authentication_router
 from app.routers.catalogue import router as catalogue_router
+from app.routers.enrichment import router as enrichment_router
 
 settings = get_settings()
 
@@ -40,6 +41,7 @@ app.add_middleware(
 app.include_router(catalogue_router)
 app.include_router(authentication_router)
 app.include_router(admin_router)
+app.include_router(enrichment_router)
 
 
 class HealthResponse(BaseModel):
