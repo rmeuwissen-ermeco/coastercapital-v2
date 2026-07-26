@@ -12,7 +12,7 @@ WIKIDATA_ENTITY = "https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
 WIKIPEDIA_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
 WIKIMEDIA_HEADERS = {
     "User-Agent": (
-        "CoasterCapital/1.0 " 
+        "CoasterCapital/1.0 "
         "(https://github.com/rmeuwissen-ermeco/coastercapital-v2; " 
         "source-driven enrichment)"
     ),
