@@ -40,6 +40,174 @@ body {
   font-family: "Manrope", Arial, sans-serif;
 }
 
+.proposal-counter,
+.status-chip {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 7px 12px;
+  text-transform: uppercase;
+}
+
+.proposal-counter {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-tertiary);
+}
+
+.enrichment-launcher form {
+  align-items: end;
+}
+
+.enrichment-jobs {
+  display: grid;
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.enrichment-job,
+.empty-review {
+  background: white;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  padding: 24px;
+}
+
+.enrichment-job > header {
+  align-items: start;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.enrichment-job h2 {
+  margin: 10px 0 4px;
+}
+
+.enrichment-job header p,
+.enrichment-job time,
+.empty-review p {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+  margin: 0;
+}
+
+.proposal-list {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.proposal-card {
+  background: var(--md-sys-color-surface-container-low);
+  border-radius: var(--md-sys-shape-corner-medium);
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.proposal-heading {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.proposal-heading > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.proposal-heading span,
+.proposal-card dt {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.proposal-heading strong {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.proposal-card dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.proposal-card dl div {
+  display: grid;
+  gap: 2px;
+}
+
+.proposal-card dd {
+  font-size: 13px;
+  margin: 0;
+}
+
+.source-links,
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.source-links a {
+  color: var(--md-sys-color-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.review-actions {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+
+.review-actions button {
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+.status-review,
+.status-pending {
+  background: #fff0c9;
+  color: #765800;
+}
+
+.status-accepted,
+.status-completed {
+  background: #c9efcf;
+  color: #155c2a;
+}
+
+.status-rejected,
+.status-failed {
+  background: #ffdad6;
+  color: #93000a;
+}
+
+.status-running {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-tertiary);
+}
+
+.pipeline-error {
+  background: #ffdad6;
+  border-radius: var(--md-sys-shape-corner-small);
+  color: #93000a;
+  padding: 12px;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 a {
   color: inherit;
   text-decoration: none;

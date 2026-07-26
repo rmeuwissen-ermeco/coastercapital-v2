@@ -3,7 +3,20 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from app.models import CoasterStatus
+from app.models import (
+    CoasterStatus,
+    EnrichmentJobStatus,
+    EvidenceStatus,
+    ProposalStatus,
+)
+
+ENRICHABLE_COASTER_FIELDS = {
+    "opened_on",
+    "height_m",
+    "speed_kmh",
+    "length_m",
+    "summary",
+}
 
 
 class ORMModel(BaseModel):
@@ -174,3 +187,60 @@ class StatsRead(BaseModel):
     parks: int
     manufacturers: int
     coasters: int
+
+
+class SourceEvidenceRead(ORMModel):
+    id: uuid.UUID
+    source_type: str
+    source_url: str
+    source_label: str | None
+    retrieved_at: datetime
+    raw_value: object | None
+
+
+class FieldProposalRead(ORMModel):
+    id: uuid.UUID
+    field_name: str
+    proposed_value: object | None
+    current_value: object | None
+    evidence_status: EvidenceStatus
+    proposal_status: ProposalStatus
+    confidence: float
+    rationale: str | None
+    reviewed_at: datetime | None
+    evidence: list[SourceEvidenceRead]
+
+
+class EnrichmentCoasterRead(ORMModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+
+
+class EnrichmentJobCreate(BaseModel):
+    coaster_id: uuid.UUID
+    wikidata_id: str | None = Field(default=None, pattern=r"^Q[1-9][0-9]*$")
+
+
+class EnrichmentJobRead(ORMModel):
+    id: uuid.UUID
+    status: EnrichmentJobStatus
+    wikidata_id: str | None
+    wikipedia_title: str | None
+    error_message: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    coaster: EnrichmentCoasterRead
+    proposals: list[FieldProposalRead]
+
+
+class ProposalReview(BaseModel):
+    decision: ProposalStatus
+
+    @field_validator("decision")
+    @classmethod
+    def final_decision(cls, value: ProposalStatus) -> ProposalStatus:
+        if value == ProposalStatus.PENDING:
+            raise ValueError("Decision must be accepted or rejected")
+        return value

@@ -37,6 +37,28 @@ class UserRole(str, enum.Enum):
     VIEWER = "viewer"
 
 
+class EnrichmentJobStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    REVIEW = "review"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class EvidenceStatus(str, enum.Enum):
+    CONFIRMED = "confirmed"
+    PROBABLE = "probable"
+    AI_INTERPRETATION = "ai_interpretation"
+    CONFLICTING = "conflicting"
+    UNKNOWN = "unknown"
+
+
+class ProposalStatus(str, enum.Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -173,8 +195,106 @@ class Coaster(Base, TimestampMixin):
 
     park: Mapped[Park] = relationship(back_populates="coasters")
     manufacturer: Mapped[Manufacturer | None] = relationship(back_populates="coasters")
+    enrichment_jobs: Mapped[list["EnrichmentJob"]] = relationship(
+        back_populates="coaster", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("park_id", "slug", name="uq_coasters_park_slug"),
         Index("ix_coasters_name_park", "name", "park_id"),
     )
+
+
+class EnrichmentJob(Base, TimestampMixin):
+    __tablename__ = "enrichment_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    coaster_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("coasters.id", ondelete="CASCADE"), index=True
+    )
+    requested_by_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    status: Mapped[EnrichmentJobStatus] = mapped_column(
+        Enum(
+            EnrichmentJobStatus,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        default=EnrichmentJobStatus.PENDING,
+        index=True,
+    )
+    wikidata_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    wikipedia_title: Mapped[str | None] = mapped_column(String(300))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    coaster: Mapped[Coaster] = relationship(back_populates="enrichment_jobs")
+    requested_by: Mapped[User] = relationship()
+    proposals: Mapped[list["FieldProposal"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
+
+
+class FieldProposal(Base, TimestampMixin):
+    __tablename__ = "field_proposals"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("enrichment_jobs.id", ondelete="CASCADE"), index=True
+    )
+    field_name: Mapped[str] = mapped_column(String(80), index=True)
+    proposed_value: Mapped[object | None] = mapped_column(JSON)
+    current_value: Mapped[object | None] = mapped_column(JSON)
+    evidence_status: Mapped[EvidenceStatus] = mapped_column(
+        Enum(
+            EvidenceStatus,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        index=True,
+    )
+    proposal_status: Mapped[ProposalStatus] = mapped_column(
+        Enum(
+            ProposalStatus,
+            native_enum=False,
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        default=ProposalStatus.PENDING,
+        index=True,
+    )
+    confidence: Mapped[float] = mapped_column(Float)
+    rationale: Mapped[str | None] = mapped_column(Text)
+    reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    job: Mapped[EnrichmentJob] = relationship(back_populates="proposals")
+    reviewed_by: Mapped[User | None] = relationship()
+    evidence: Mapped[list["SourceEvidence"]] = relationship(
+        back_populates="proposal", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "field_name", name="uq_field_proposals_job_field"),
+    )
+
+
+class SourceEvidence(Base):
+    __tablename__ = "source_evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("field_proposals.id", ondelete="CASCADE"), index=True
+    )
+    source_type: Mapped[str] = mapped_column(String(50), index=True)
+    source_url: Mapped[str] = mapped_column(String(1000))
+    source_label: Mapped[str | None] = mapped_column(String(300))
+    retrieved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    raw_value: Mapped[object | None] = mapped_column(JSON)
+
+    proposal: Mapped[FieldProposal] = relationship(back_populates="evidence")
