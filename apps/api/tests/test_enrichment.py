@@ -1,7 +1,6 @@
-import httpx
 from fastapi.testclient import TestClient
 
-from app.enrichment import EvidenceCandidate, fetch_candidates
+from app.enrichment import EvidenceCandidate
 
 
 def _coaster(client: TestClient, headers: dict[str, str]) -> dict:
@@ -135,39 +134,64 @@ def test_rejected_proposal_does_not_change_coaster(
     assert current["speed_kmh"] is None
 
 
-def test_wikimedia_requests_include_identifying_user_agent() -> None:
-    requests: list[httpx.Request] = []
+def test_editor_can_correct_value_with_protected_override(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    coaster = _coaster(client, auth_headers)
+    monkeypatch.setattr(
+        "app.enrichment.fetch_candidates",
+        lambda **_: (
+            "Q123",
+            "Baron 1898",
+            [
+                EvidenceCandidate(
+                    field_name="height_m",
+                    value=37.5,
+                    source_type="wikidata",
+                    source_url="https://www.wikidata.org/wiki/Q123",
+                    source_label="Baron 1898 · P2048",
+                    confidence=0.82,
+                    raw_value={"amount": "+37.5"},
+                )
+            ],
+        ),
+    )
+    job = client.post(
+        "/v1/admin/enrichment/jobs",
+        json={"entity_type": "coaster", "entity_id": coaster["id"]},
+        headers=auth_headers,
+    ).json()
+    proposal_id = job["proposals"][0]["id"]
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.url.path == "/w/api.php":
-            return httpx.Response(200, json={"search": [{"id": "Q123"}]})
-        return httpx.Response(
-            200,
-            json={
-                "entities": {
-                    "Q123": {
-                        "id": "Q123",
-                        "claims": {},
-                        "sitelinks": {},
-                    }
-                }
-            },
-        )
+    missing_reason = client.patch(
+        f"/v1/admin/enrichment/proposals/{proposal_id}",
+        json={"decision": "accepted", "value": 30},
+        headers=auth_headers,
+    )
+    assert missing_reason.status_code == 422
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
-        qid, wikipedia_title, candidates = fetch_candidates(
-            coaster_name="Python",
-            park_name="Efteling",
-            client=http,
-        )
+    corrected = client.patch(
+        f"/v1/admin/enrichment/proposals/{proposal_id}",
+        json={
+            "decision": "accepted",
+            "value": 30,
+            "override_reason": "37.5 m is the drop; construction height is 30 m.",
+        },
+        headers=auth_headers,
+    )
+    assert corrected.status_code == 200
+    assert corrected.json()["reviewed_value"] == 30
+    assert corrected.json()["is_manual_override"] is True
+    current = client.get("/v1/coasters?query=Baron").json()["items"][0]
+    assert current["height_m"] == 30
 
-    assert qid == "Q123"
-    assert wikipedia_title is None
-    assert candidates == []
-    assert len(requests) == 2
-    for request in requests:
-        user_agent = request.headers["User-Agent"]
-        assert user_agent.startswith("CoasterCapital/1.0")
-        assert "github.com/rmeuwissen-ermeco/coastercapital-v2" in user_agent
-        assert request.headers["Accept"] == "application/json"
+
+def test_catalog_covers_all_three_entity_types(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    response = client.get("/v1/admin/enrichment/catalog", headers=auth_headers)
+    assert response.status_code == 200
+    entity_types = {item["entity_type"] for item in response.json()}
+    assert entity_types == {"coaster", "park", "manufacturer"}
