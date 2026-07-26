@@ -267,6 +267,8 @@ class EnrichmentJob(Base, TimestampMixin):
     )
     wikidata_id: Mapped[str | None] = mapped_column(String(32), index=True)
     wikipedia_title: Mapped[str | None] = mapped_column(String(300))
+    source_report: Mapped[dict | None] = mapped_column(JSON)
+    ai_model: Mapped[str | None] = mapped_column(String(120))
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

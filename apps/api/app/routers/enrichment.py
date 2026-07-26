@@ -1,13 +1,16 @@
 import uuid
+from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app import confidence, data_catalog, enrichment, models, schemas
+from app import confidence, data_catalog, enrichment, models, research, schemas
 from app.auth import require_roles
+from app.config import get_settings
 from app.crud import get_or_404, record_audit
 from app.database import get_db
 
@@ -87,72 +90,160 @@ def create_job(
     db.commit()
     db.refresh(job)
     try:
-        qid, wikipedia_title, candidates = enrichment.fetch_candidates(
-            coaster_name=entity.name,
-            park_name=context_name,
-            wikidata_id=payload.wikidata_id,
-        )
-        job.wikidata_id = qid
-        job.wikipedia_title = wikipedia_title
+        settings = get_settings()
+        source_report: dict[str, object] = {
+            "wikimedia": {"status": "pending", "assertions": 0},
+            "official": {"status": "not_requested", "assertions": 0},
+            "rcdb": {"status": "not_requested", "assertions": 0},
+            "ai": {
+                "status": (
+                    "enabled"
+                    if payload.use_ai and settings.openai_api_key
+                    else "disabled_no_key"
+                    if payload.use_ai
+                    else "disabled_by_request"
+                )
+            },
+            "warnings": [],
+        }
+        candidates: list[enrichment.EvidenceCandidate] = []
+        try:
+            qid, wikipedia_title, wikimedia_candidates = enrichment.fetch_candidates(
+                coaster_name=entity.name,
+                park_name=context_name,
+                wikidata_id=payload.wikidata_id,
+            )
+            candidates.extend(wikimedia_candidates)
+            job.wikidata_id = qid
+            job.wikipedia_title = wikipedia_title
+            source_report["wikimedia"].update(
+                status="ok", assertions=len(wikimedia_candidates)
+            )
+        except enrichment.EnrichmentLookupError as exc:
+            source_report["wikimedia"].update(status="failed", error=str(exc))
+            source_report["warnings"].append(str(exc))
         job.entity_match_confidence = 0.99 if payload.wikidata_id else 0.90
+        page_sources = _page_sources(payload, entity)
+        for source in page_sources:
+            source_state = source_report[source.source_type]
+            try:
+                page_text = research.fetch_page_text(source, settings)
+                extracted = (
+                    research.extract_assertions(
+                        entity_type=payload.entity_type,
+                        entity_name=entity.name,
+                        context_name=context_name,
+                        source=source,
+                        page_text=page_text,
+                        settings=settings,
+                    )
+                    if payload.use_ai
+                    else []
+                )
+                candidates.extend(extracted)
+                source_state.update(status="ok", assertions=len(extracted))
+            except research.ResearchError as exc:
+                source_state.update(status="failed", error=str(exc))
+                source_report["warnings"].append(str(exc))
+        job.source_report = source_report
+        job.ai_model = (
+            settings.openai_model
+            if payload.use_ai and settings.openai_api_key
+            else None
+        )
+        if not candidates:
+            raise research.ResearchError(
+                "No usable source assertions were found; canonical data was not changed"
+            )
+        grouped: dict[str, list[enrichment.EvidenceCandidate]] = defaultdict(list)
         for candidate in candidates:
-            definition = data_catalog.field_definition(payload.entity_type, candidate.field_name)
-            if definition is None or not hasattr(entity, candidate.field_name):
+            grouped[candidate.field_name].append(candidate)
+        for field_name, field_candidates in grouped.items():
+            definition = data_catalog.field_definition(payload.entity_type, field_name)
+            if definition is None or not hasattr(entity, field_name):
                 continue
-            current = getattr(entity, candidate.field_name)
-            is_valid = data_catalog.validate_value(definition, candidate.value)
+            synthesis = None
+            if payload.use_ai and settings.openai_api_key and len(field_candidates) > 1:
+                try:
+                    synthesis = research.synthesize_field(
+                        entity_type=payload.entity_type,
+                        entity_name=entity.name,
+                        field_name=field_name,
+                        candidates=field_candidates,
+                        settings=settings,
+                    )
+                except research.ResearchError as exc:
+                    source_report["warnings"].append(str(exc))
+                    source_report["ai"]["status"] = "partial_failure"
+            selected = _select_candidate(field_candidates, synthesis)
+            current = getattr(entity, field_name)
+            is_valid = data_catalog.validate_value(definition, selected.value)
+            domains = {
+                item.independence_key or urlparse(item.source_url).hostname or item.source_type
+                for item in field_candidates
+            }
+            has_primary = any(item.is_primary for item in field_candidates)
+            has_conflict = len(research.distinct_values(field_candidates)) > 1
+            agreement = _agreement(field_candidates, selected.value)
+            semantic_fit = synthesis.semantic_fit if synthesis else 0.90
+            source_quality = max(item.confidence for item in field_candidates)
             score = confidence.calculate(
                 confidence.ScoreInput(
                     entity_match=job.entity_match_confidence,
-                    source_quality=candidate.confidence,
-                    agreement=candidate.confidence,
-                    semantic_fit=0.90,
+                    source_quality=source_quality,
+                    agreement=agreement,
+                    semantic_fit=semantic_fit,
                     freshness=0.80,
                     validation=1.0 if is_valid else 0.0,
-                    independent_sources=1,
-                    has_primary_source=False,
+                    independent_sources=len(domains),
+                    has_primary_source=has_primary,
+                    has_conflict=has_conflict,
                 ),
                 definition.automation_class,
             )
             proposal = models.FieldProposal(
                 job_id=job.id,
-                field_name=candidate.field_name,
-                proposed_value=candidate.value,
+                field_name=field_name,
+                proposed_value=selected.value,
                 current_value=_json_value(current),
-                evidence_status=models.EvidenceStatus.PROBABLE,
+                evidence_status=(
+                    models.EvidenceStatus.CONFLICTING
+                    if has_conflict
+                    else models.EvidenceStatus.PROBABLE
+                ),
                 confidence=score.confidence,
                 confidence_class=score.confidence_class,
                 automation_class=definition.automation_class,
                 score_breakdown=score.breakdown,
+                has_conflict=has_conflict,
                 auto_approval_eligible=score.auto_approval_eligible,
-                rationale=(
-                    "One source assertion was found. The value remains subject to "
-                    "editorial review until independent or primary evidence confirms it."
-                ),
+                rationale=_rationale(field_candidates, synthesis, has_conflict),
             )
-            proposal.evidence.append(
-                models.SourceEvidence(
-                    source_type=candidate.source_type,
-                    source_url=candidate.source_url,
-                    source_label=candidate.source_label,
-                    asserted_value=candidate.value,
-                    source_confidence=candidate.confidence,
-                    raw_value=candidate.raw_value,
+            for item in field_candidates:
+                proposal.evidence.append(
+                    models.SourceEvidence(
+                        source_type=item.source_type,
+                        source_url=item.source_url,
+                        source_label=item.source_label,
+                        asserted_value=item.value,
+                        source_confidence=item.confidence,
+                        raw_value=item.raw_value,
+                        is_primary=item.is_primary,
+                    )
                 )
-            )
             db.add(proposal)
             if score.auto_approval_eligible and not _has_active_override(
-                db, payload.entity_type, entity.id, candidate.field_name
+                db, payload.entity_type, entity.id, field_name
             ):
-                _apply_value(entity, candidate.field_name, candidate.value)
+                _apply_value(entity, field_name, selected.value)
                 proposal.proposal_status = models.ProposalStatus.AUTO_ACCEPTED
-                proposal.reviewed_value = candidate.value
+                proposal.reviewed_value = selected.value
                 proposal.reviewed_at = datetime.now(UTC)
                 db.add(entity)
         job.status = models.EnrichmentJobStatus.REVIEW
         job.finished_at = datetime.now(UTC)
         db.commit()
-    except enrichment.EnrichmentLookupError as exc:
+    except (enrichment.EnrichmentLookupError, research.ResearchError) as exc:
         job.status = models.EnrichmentJobStatus.FAILED
         job.error_message = str(exc)
         job.finished_at = datetime.now(UTC)
@@ -170,6 +261,90 @@ def create_job(
         },
     )
     return _load_job(db, job.id)
+
+
+def _page_sources(
+    payload: schemas.EnrichmentJobCreate,
+    entity: models.Coaster | models.Park | models.Manufacturer,
+) -> list[research.PageSource]:
+    sources: list[research.PageSource] = []
+    official_url = str(payload.official_url) if payload.official_url else None
+    if official_url is None:
+        if isinstance(entity, (models.Park, models.Manufacturer)):
+            official_url = entity.website_url
+        elif isinstance(entity, models.Coaster):
+            official_url = entity.park.website_url
+    if official_url:
+        sources.append(
+            research.PageSource(
+                source_type="official",
+                url=str(official_url),
+                label=f"Official website · {entity.name}",
+                is_primary=True,
+            )
+        )
+    if payload.rcdb_url:
+        sources.append(
+            research.PageSource(
+                source_type="rcdb",
+                url=str(payload.rcdb_url),
+                label=f"RCDB · {entity.name}",
+                is_primary=False,
+            )
+        )
+    return sources
+
+
+def _select_candidate(
+    candidates: list[enrichment.EvidenceCandidate],
+    synthesis: research.SynthesisResult | None,
+) -> enrichment.EvidenceCandidate:
+    if synthesis is not None:
+        supporting = [candidates[index] for index in synthesis.supporting_indexes]
+        best = max(supporting, key=lambda item: (item.is_primary, item.confidence))
+        return enrichment.EvidenceCandidate(
+            field_name=synthesis.field_name,
+            value=synthesis.value,
+            source_type=best.source_type,
+            source_url=best.source_url,
+            source_label=best.source_label,
+            confidence=synthesis.confidence,
+            raw_value=best.raw_value,
+            is_primary=best.is_primary,
+            independence_key=best.independence_key,
+        )
+    return max(candidates, key=lambda item: (item.is_primary, item.confidence))
+
+
+def _agreement(
+    candidates: list[enrichment.EvidenceCandidate], selected_value: object
+) -> float:
+    selected = str(selected_value).strip().casefold()
+    agreeing = sum(
+        1 for item in candidates if str(item.value).strip().casefold() == selected
+    )
+    return agreeing / len(candidates)
+
+
+def _rationale(
+    candidates: list[enrichment.EvidenceCandidate],
+    synthesis: research.SynthesisResult | None,
+    has_conflict: bool,
+) -> str:
+    if synthesis:
+        prefix = "Conflicting assertions require review. " if has_conflict else ""
+        return prefix + synthesis.rationale
+    if has_conflict:
+        return (
+            f"{len(candidates)} source assertions disagree. The highest-quality assertion "
+            "is proposed, but automatic approval is blocked."
+        )
+    if len(candidates) == 1:
+        return (
+            "One source assertion was found. Editorial review remains required until "
+            "independent or primary evidence confirms it."
+        )
+    return f"{len(candidates)} source assertions support the proposed canonical value."
 
 
 @router.patch("/proposals/{proposal_id}", response_model=schemas.FieldProposalRead)

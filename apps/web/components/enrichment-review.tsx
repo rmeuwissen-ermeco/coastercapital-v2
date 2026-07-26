@@ -39,6 +39,9 @@ export function EnrichmentReview() {
   const [entityType, setEntityType] = useState<EntityType>("coaster");
   const [entityId, setEntityId] = useState("");
   const [wikidataId, setWikidataId] = useState("");
+  const [officialUrl, setOfficialUrl] = useState("");
+  const [rcdbUrl, setRcdbUrl] = useState("");
+  const [useAi, setUseAi] = useState(true);
   const [message, setMessage] = useState("Loading enrichment workspace…");
   const [busy, setBusy] = useState(false);
 
@@ -109,9 +112,14 @@ export function EnrichmentReview() {
           entity_type: entityType,
           entity_id: entityId,
           wikidata_id: wikidataId.trim() || null,
+          official_url: officialUrl.trim() || null,
+          rcdb_url: rcdbUrl.trim() || null,
+          use_ai: useAi,
         }),
       });
       setWikidataId("");
+      setOfficialUrl("");
+      setRcdbUrl("");
       await load();
       setMessage("Source check complete · review each proposal below");
     } catch (error) {
@@ -184,6 +192,35 @@ export function EnrichmentReview() {
               onChange={(event) => setWikidataId(event.target.value)}
             />
           </label>
+          <label>
+            Official source URL (optional)
+            <input
+              inputMode="url"
+              placeholder="https://www.efteling.com/…"
+              type="url"
+              value={officialUrl}
+              onChange={(event) => setOfficialUrl(event.target.value)}
+            />
+          </label>
+          <label>
+            RCDB record URL (optional)
+            <input
+              inputMode="url"
+              pattern="https://(www\.)?rcdb\.com/.*"
+              placeholder="https://rcdb.com/12083.htm"
+              type="url"
+              value={rcdbUrl}
+              onChange={(event) => setRcdbUrl(event.target.value)}
+            />
+          </label>
+          <label className="research-toggle">
+            <input
+              checked={useAi}
+              type="checkbox"
+              onChange={(event) => setUseAi(event.target.checked)}
+            />
+            Use AI to extract and compare source assertions
+          </label>
           <button className="filled-button" disabled={busy || !entityId} type="submit">
             {busy ? "Working…" : "Start source check"}
           </button>
@@ -206,11 +243,13 @@ export function EnrichmentReview() {
                   <p>
                     {job.entity_type} · {job.wikidata_id ?? "No external identifier"}
                     {job.wikipedia_title ? ` · ${job.wikipedia_title}` : ""}
+                    {job.ai_model ? ` · AI ${job.ai_model}` : " · AI not used"}
                   </p>
                 </div>
                 <time>{new Date(job.created_at).toLocaleString("nl-NL")}</time>
               </header>
               {job.error_message && <p className="pipeline-error">{job.error_message}</p>}
+              {job.source_report && <SourceReport report={job.source_report} />}
               <div className="proposal-list">
                 {job.proposals.map((proposal) => (
                   <ProposalCard
@@ -225,6 +264,24 @@ export function EnrichmentReview() {
         )}
       </section>
     </>
+  );
+}
+
+function SourceReport({ report }: { report: Record<string, unknown> }) {
+  const sources = ["wikimedia", "official", "rcdb", "ai"];
+  return (
+    <div className="source-report">
+      {sources.map((name) => {
+        const detail = report[name] as Record<string, unknown> | undefined;
+        if (!detail) return null;
+        return (
+          <span className={`source-state source-${String(detail.status)}`} key={name}>
+            {name}: {String(detail.status)}
+            {typeof detail.assertions === "number" ? ` · ${detail.assertions}` : ""}
+          </span>
+        );
+      })}
+    </div>
   );
 }
 

@@ -195,3 +195,58 @@ def test_catalog_covers_all_three_entity_types(
     assert response.status_code == 200
     entity_types = {item["entity_type"] for item in response.json()}
     assert entity_types == {"coaster", "park", "manufacturer"}
+
+
+def test_conflicting_sources_create_one_blocked_proposal(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    coaster = _coaster(client, auth_headers)
+    monkeypatch.setattr(
+        "app.enrichment.fetch_candidates",
+        lambda **_: (
+            "Q123",
+            "Baron 1898",
+            [
+                EvidenceCandidate(
+                    field_name="height_m",
+                    value=30,
+                    source_type="official",
+                    source_url="https://www.efteling.com/baron",
+                    source_label="Efteling",
+                    confidence=0.99,
+                    raw_value={"quote": "30 metres high"},
+                    is_primary=True,
+                    independence_key="efteling.com",
+                ),
+                EvidenceCandidate(
+                    field_name="height_m",
+                    value=37.5,
+                    source_type="rcdb",
+                    source_url="https://rcdb.com/12083.htm",
+                    source_label="RCDB",
+                    confidence=0.92,
+                    raw_value={"quote": "Height 37.5 m"},
+                    independence_key="rcdb.com",
+                ),
+            ],
+        ),
+    )
+    response = client.post(
+        "/v1/admin/enrichment/jobs",
+        json={
+            "entity_type": "coaster",
+            "entity_id": coaster["id"],
+            "wikidata_id": "Q123",
+            "use_ai": False,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    proposal = response.json()["proposals"][0]
+    assert proposal["proposed_value"] == 30
+    assert proposal["has_conflict"] is True
+    assert proposal["auto_approval_eligible"] is False
+    assert proposal["evidence_status"] == "conflicting"
+    assert len(proposal["evidence"]) == 2

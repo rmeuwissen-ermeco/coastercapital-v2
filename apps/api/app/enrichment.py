@@ -34,6 +34,8 @@ class EvidenceCandidate:
     source_label: str
     confidence: float
     raw_value: Any
+    is_primary: bool = False
+    independence_key: str | None = None
 
 
 class EnrichmentLookupError(RuntimeError):
