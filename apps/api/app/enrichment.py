@@ -10,7 +10,14 @@ import httpx
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 WIKIDATA_ENTITY = "https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
 WIKIPEDIA_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
-USER_AGENT = "CoasterCapital/0.4 (source-driven enrichment)"
+WIKIMEDIA_HEADERS = {
+    "User-Agent": (
+        "CoasterCapital/1.0 "
+        "(https://github.com/rmeuwissen-ermeco/coastercapital-v2; " 
+        "source-driven enrichment)"
+    ),
+    "Accept": "application/json",
+}
 
 
 @dataclass(frozen=True)
@@ -89,11 +96,11 @@ def fetch_candidates(
     client: httpx.Client | None = None,
 ) -> tuple[str, str | None, list[EvidenceCandidate]]:
     owns_client = client is None
-    http = client or httpx.Client(timeout=20, headers={"User-Agent": USER_AGENT})
+    http = client or httpx.Client(timeout=20, headers=WIKIMEDIA_HEADERS)
     try:
         qid = wikidata_id or _find_wikidata_id(http, coaster_name, park_name)
         entity_url = WIKIDATA_ENTITY.format(qid=qid)
-        response = http.get(entity_url)
+        response = http.get(entity_url, headers=WIKIMEDIA_HEADERS)
         response.raise_for_status()
         entity = response.json()["entities"][qid]
         candidates = _wikidata_candidates(entity, entity_url)
@@ -120,6 +127,7 @@ def _find_wikidata_id(http: httpx.Client, coaster_name: str, park_name: str) -> 
             "format": "json",
             "limit": 5,
         },
+        headers=WIKIMEDIA_HEADERS,
     )
     response.raise_for_status()
     results = response.json().get("search", [])
@@ -169,7 +177,10 @@ def _wikipedia_title(entity: dict[str, Any]) -> str | None:
 def _wikipedia_summary(
     http: httpx.Client, title: str
 ) -> EvidenceCandidate | None:
-    response = http.get(WIKIPEDIA_SUMMARY.format(title=quote(title, safe="")))
+    response = http.get(
+        WIKIPEDIA_SUMMARY.format(title=quote(title, safe="")),
+        headers=WIKIMEDIA_HEADERS,
+    )
     if response.status_code == 404:
         return None
     response.raise_for_status()
