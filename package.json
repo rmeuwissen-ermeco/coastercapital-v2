@@ -1,0 +1,19 @@
+{
+  "name": "coastercapital-v2",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @coastercapital/web",
+    "build": "npm run build --workspace @coastercapital/web",
+    "lint": "npm run lint --workspace @coastercapital/web",
+    "typecheck": "npm run typecheck --workspace @coastercapital/web"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
+
