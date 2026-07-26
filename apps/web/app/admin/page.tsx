@@ -18,7 +18,7 @@ export default function AdminPage() {
           <a className="active" href="/admin">
             Overview
           </a>
-          <a href="#">Data</a>
+          <Link href="/admin/data">Data</Link>
           <a href="#">Review</a>
           <a href="#">Sources</a>
         </nav>
@@ -30,7 +30,9 @@ export default function AdminPage() {
             <h1>Good morning</h1>
             <p>Manage canonical data and review source-backed proposals.</p>
           </div>
-          <button className="filled-button">Add record</button>
+          <Link className="filled-button" href="/admin/data">
+            Add record
+          </Link>
         </header>
         <div className="admin-summary">
           <article>
@@ -46,7 +48,7 @@ export default function AdminPage() {
           <article>
             <span>API status</span>
             <strong className="success-text">Healthy</strong>
-            <a href="#">View API contract</a>
+            <a href="/admin/data">Open live catalogue</a>
           </article>
         </div>
         <div className="module-grid">
@@ -57,7 +59,9 @@ export default function AdminPage() {
                 <h2>{title}</h2>
                 <p>{description}</p>
               </div>
-              <button aria-label={`Open ${title}`}>→</button>
+              <Link aria-label={`Open ${title}`} href="/admin/data">
+                →
+              </Link>
             </article>
           ))}
         </div>

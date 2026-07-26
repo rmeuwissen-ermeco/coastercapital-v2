@@ -1,8 +1,4 @@
-const stats = [
-  { value: "12,480", label: "Coasters" },
-  { value: "4,260", label: "Parks" },
-  { value: "640", label: "Manufacturers" },
-];
+import { CatalogueDiscovery } from "@/components/catalogue-discovery";
 
 const highlights = [
   {
@@ -21,14 +17,6 @@ const highlights = [
     body: "A stable data contract powers the website, research exports and future commercial APIs.",
   },
 ];
-
-function SearchIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="m21 20-5.2-5.2a7 7 0 1 0-1 1L20 21l1-1ZM5 10.5a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0Z" />
-    </svg>
-  );
-}
 
 export default function Home() {
   return (
@@ -60,27 +48,7 @@ export default function Home() {
               human review and AI-assisted discovery.
             </p>
 
-            <form className="search-bar" role="search">
-              <SearchIcon />
-              <label className="sr-only" htmlFor="coaster-search">
-                Search coasters, parks or manufacturers
-              </label>
-              <input
-                id="coaster-search"
-                name="query"
-                placeholder="Search coasters, parks or manufacturers"
-              />
-              <button type="submit">Search</button>
-            </form>
-
-            <div className="stat-row" aria-label="Database preview statistics">
-              {stats.map((stat) => (
-                <div className="stat" key={stat.label}>
-                  <strong>{stat.value}</strong>
-                  <span>{stat.label}</span>
-                </div>
-              ))}
-            </div>
+            <CatalogueDiscovery />
           </div>
 
           <div className="hero-visual" aria-label="Illustrated coaster data card">
@@ -142,9 +110,8 @@ export default function Home() {
           </span>
           <span>Coaster Capital</span>
         </a>
-        <p>Run 1 foundation · Source-driven by design.</p>
+        <p>Run 2 data core · Source-driven by design.</p>
       </footer>
     </div>
   );
 }
-
