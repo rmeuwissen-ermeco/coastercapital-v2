@@ -92,6 +92,8 @@ export type EnrichmentJob = {
   status: "pending" | "running" | "review" | "completed" | "failed";
   wikidata_id: string | null;
   wikipedia_title: string | null;
+  source_report: Record<string, unknown> | null;
+  ai_model: string | null;
   error_message: string | null;
   created_at: string;
   entity_type: "coaster" | "park" | "manufacturer";

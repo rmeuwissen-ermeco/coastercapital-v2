@@ -43,9 +43,11 @@ Open <http://127.0.0.1:8000/health> or <http://127.0.0.1:8000/docs>.
 
 ## Current status
 
-Run 4 adds a review-first Wikidata and Wikipedia enrichment pipeline to the secured
-catalogue. Every proposed field value retains source evidence and confidence metadata;
-canonical data changes only after explicit approval and every decision is audited.
+Run 6 provides an operational, review-first research pipeline for Wikimedia, official
+park/manufacturer pages and explicit RCDB records. OpenAI extracts and compares only
+the supplied source text and never counts as a source itself. Every proposed value
+retains evidence, confidence, conflict and audit metadata; automatic acceptance remains
+subject to the Run 5 governance rules and protected manual overrides.
 
 ## Managed deployment
 

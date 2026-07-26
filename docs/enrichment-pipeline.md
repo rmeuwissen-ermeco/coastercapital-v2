@@ -82,3 +82,85 @@ Deliberately pending for the next source-integration run:
 
 Until those adapters are connected, a single Wikimedia assertion remains a manual
 review proposal and can never meet the evidence rule for automatic approval.
+# Run 6 — operational source research
+
+Run 6 connects the Run 5 evidence and governance model to real source adapters.
+The canonical catalogue is still changed only through automatic approval that
+passes every guardrail or through an explicit administrator decision.
+
+## Supported source adapters
+
+| Adapter | Input | Role | Primary source |
+|---|---|---|---|
+| Wikimedia | optional Wikidata QID, otherwise entity search | structured claims and encyclopedic context | no |
+| Official | explicit HTTPS URL or saved park/manufacturer website | authoritative park or manufacturer assertion | yes |
+| RCDB | explicit `https://rcdb.com/...` record URL | specialist secondary assertion | no |
+| OpenAI | text fetched from the sources above | extraction and comparison only | never |
+
+The OpenAI layer cannot browse independently. It receives source text, the entity
+identity, the data-catalogue definition and the permitted output fields. Every
+extracted assertion retains the original webpage URL and a short supporting quote.
+The model output itself is not stored as source evidence.
+
+## Production configuration
+
+Add these variables to the API service:
+
+```text
+COASTER_OPENAI_API_KEY=<secret>
+COASTER_OPENAI_MODEL=gpt-5.6
+COASTER_RESEARCH_TIMEOUT_SECONDS=25
+COASTER_RESEARCH_MAX_PAGE_BYTES=1500000
+```
+
+`COASTER_OPENAI_API_KEY` is optional. Without it, Wikimedia assertions still work
+and source jobs remain reviewable, but HTML pages cannot be converted into field
+assertions. The admin UI reports `disabled_no_key`; the job does not pretend that
+AI research occurred.
+
+After deploying the variables, run:
+
+```bash
+cd apps/api
+alembic upgrade head
+```
+
+The expected migration head is `c6a5e2f84b17`.
+
+## Administrator workflow
+
+1. Open **Admin → Enrichment** and select coaster, park or manufacturer.
+2. Optionally enter a known Wikidata QID.
+3. Enter the exact official detail page. A saved park or manufacturer homepage is
+   used only when no explicit URL is supplied.
+4. For a coaster, enter its exact RCDB record URL when known.
+5. Leave AI comparison enabled and start the source check.
+6. Check the source-state chips. A failed adapter does not invalidate assertions
+   successfully collected from another adapter.
+7. Review conflicts and the supporting source assertions per field.
+8. Correct with a reason, accept, reject, mark insufficient, or defer.
+
+Use detail pages rather than general homepages. Extraction quality depends on the
+page actually containing explicit facts.
+
+## Safety and failure behaviour
+
+- Only public HTTPS URLs are fetched.
+- Credentials in URLs, localhost, private IPs and reserved IPs are blocked.
+- Redirect targets are validated again.
+- RCDB URLs must remain on `rcdb.com`.
+- Only HTML is accepted and response size is capped.
+- Source and AI failures are recorded in `source_report`.
+- No assertions means a failed job and no canonical mutation.
+- Conflicting values always block automatic approval.
+- Existing manual overrides remain protected.
+- AI may select only from supplied evidence and never satisfies the independent
+  source requirement by itself.
+
+## Operational rollout
+
+Start with 25 known coasters across at least five parks. Include easy records,
+height/drop ambiguity, renamed rides, relocated rides, closed rides and records
+with known source disagreement. Review every proposal manually during this pilot.
+Record false positives by field and source type. Enable automatic acceptance only
+after the resulting confidence calibration is reviewed.

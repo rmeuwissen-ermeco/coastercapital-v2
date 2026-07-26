@@ -197,6 +197,9 @@ class SourceEvidenceRead(ORMModel):
     source_type: str
     source_url: str
     source_label: str | None
+    asserted_value: object | None
+    source_confidence: float | None
+    is_primary: bool
     retrieved_at: datetime
     raw_value: object | None
 
@@ -232,6 +235,9 @@ class EnrichmentJobCreate(BaseModel):
     entity_id: uuid.UUID | None = None
     coaster_id: uuid.UUID | None = None
     wikidata_id: str | None = Field(default=None, pattern=r"^Q[1-9][0-9]*$")
+    official_url: HttpUrl | None = None
+    rcdb_url: HttpUrl | None = None
+    use_ai: bool = True
 
     @field_validator("entity_id")
     @classmethod
@@ -244,6 +250,8 @@ class EnrichmentJobRead(ORMModel):
     status: EnrichmentJobStatus
     wikidata_id: str | None
     wikipedia_title: str | None
+    source_report: dict | None
+    ai_model: str | None
     error_message: str | None
     started_at: datetime | None
     finished_at: datetime | None

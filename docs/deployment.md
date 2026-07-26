@@ -28,6 +28,10 @@ COASTER_CORS_ORIGINS=["https://coastercapital-v2.vercel.app"]
 COASTER_JWT_SECRET=<at least 32 random characters>
 COASTER_ADMIN_EMAIL=<administrator email>
 COASTER_ADMIN_PASSWORD=<long random administrator password>
+COASTER_OPENAI_API_KEY=<OpenAI project API key>
+COASTER_OPENAI_MODEL=gpt-5.6
+COASTER_RESEARCH_TIMEOUT_SECONDS=25
+COASTER_RESEARCH_MAX_PAGE_BYTES=1500000
 ```
 
 Migration and idempotent seeding run during every build, which also works on Render's
@@ -51,6 +55,19 @@ the versioned API; authenticated admin traffic uses the server proxy.
 2. Open `https://<render-service>.onrender.com/docs`.
 3. Search for `Baron` on the Vercel homepage.
 4. Open `/admin/data`, create a record and refresh the page.
+5. Open `/admin/enrichment`, run a known coaster with its official and RCDB URLs,
+   and confirm all requested source-state chips show `ok`.
+
+## Run 6 research
+
+Store `COASTER_OPENAI_API_KEY` only as a Render secret. OpenAI is used to extract
+structured assertions from fetched official and RCDB pages and to compare those
+assertions. It is not treated as an independent source.
+
+After deployment, verify that the Render build applied migration
+`c6a5e2f84b17`. First run the 25-record manual-review pilot described in
+`docs/enrichment-pipeline.md`. Do not enable broad unattended enrichment until the
+pilot's confidence calibration and field-level errors have been reviewed.
 
 ## Run 3 security
 
