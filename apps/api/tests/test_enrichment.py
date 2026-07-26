@@ -1,6 +1,7 @@
+import httpx
 from fastapi.testclient import TestClient
 
-from app.enrichment import EvidenceCandidate
+from app.enrichment import EvidenceCandidate, fetch_candidates
 
 
 def _coaster(client: TestClient, headers: dict[str, str]) -> dict:
@@ -132,7 +133,6 @@ def test_rejected_proposal_does_not_change_coaster(
     assert response.status_code == 200
     current = client.get("/v1/coasters?query=Baron").json()["items"][0]
     assert current["speed_kmh"] is None
-
 
 
 def test_wikimedia_requests_include_identifying_user_agent() -> None:
