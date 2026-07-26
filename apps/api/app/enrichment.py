@@ -10,7 +10,14 @@ import httpx
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 WIKIDATA_ENTITY = "https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
 WIKIPEDIA_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
-WIKIMEDIA_HEADERS = {\n    "User-Agent": (\n        "CoasterCapital/1.0 " \n        "(https://github.com/rmeuwissen-ermeco/coastercapital-v2; " \n        "source-driven enrichment)"\n    ),\n    "Accept": "application/json",\n}
+WIKIMEDIA_HEADERS = {
+    "User-Agent": (
+        "CoasterCapital/1.0 " 
+        "(https://github.com/rmeuwissen-ermeco/coastercapital-v2; " 
+        "source-driven enrichment)"
+    ),
+    "Accept": "application/json",
+}
 
 
 @dataclass(frozen=True)
@@ -120,6 +127,7 @@ def _find_wikidata_id(http: httpx.Client, coaster_name: str, park_name: str) -> 
             "format": "json",
             "limit": 5,
         },
+        headers=WIKIMEDIA_HEADERS,
     )
     response.raise_for_status()
     results = response.json().get("search", [])
@@ -169,7 +177,10 @@ def _wikipedia_title(entity: dict[str, Any]) -> str | None:
 def _wikipedia_summary(
     http: httpx.Client, title: str
 ) -> EvidenceCandidate | None:
-    response = http.get(\n        WIKIPEDIA_SUMMARY.format(title=quote(title, safe="")),\n        headers=WIKIMEDIA_HEADERS,\n    )
+    response = http.get(
+        WIKIPEDIA_SUMMARY.format(title=quote(title, safe="")),
+        headers=WIKIMEDIA_HEADERS,
+    )
     if response.status_code == 404:
         return None
     response.raise_for_status()
