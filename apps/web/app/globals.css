@@ -491,6 +491,12 @@ footer p {
   justify-content: space-between;
 }
 
+.admin-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
 .admin-header h1 {
   font-size: clamp(40px, 5vw, 64px);
   letter-spacing: -0.055em;
@@ -705,6 +711,98 @@ footer p {
   color: var(--md-sys-color-on-surface-variant);
 }
 
+.login-shell {
+  align-items: center;
+  background:
+    radial-gradient(circle at 20% 20%, var(--md-sys-color-primary-container), transparent 35%),
+    var(--md-sys-color-surface-container-low);
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.login-card {
+  background: var(--md-sys-color-surface);
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  box-shadow: 0 24px 70px rgba(0, 55, 48, 0.14);
+  display: grid;
+  gap: 18px;
+  max-width: 460px;
+  padding: 40px;
+  width: 100%;
+}
+
+.login-card .brand-mark {
+  margin-bottom: 10px;
+}
+
+.login-card h1 {
+  font-size: 46px;
+  letter-spacing: -0.055em;
+  margin: 0;
+}
+
+.login-card > p:not(.label-large) {
+  color: var(--md-sys-color-on-surface-variant);
+  margin: -8px 0 10px;
+}
+
+.login-card label {
+  color: var(--md-sys-color-on-surface-variant);
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 7px;
+}
+
+.login-card input {
+  background: white;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-corner-small);
+  min-height: 52px;
+  padding: 0 14px;
+}
+
+.form-message,
+.audit-message {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+  min-height: 20px;
+}
+
+.audit-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 48px;
+}
+
+.audit-list article {
+  align-items: center;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr auto;
+  padding: 18px 20px;
+}
+
+.audit-list article > div {
+  display: grid;
+  gap: 4px;
+}
+
+.audit-list span,
+.audit-list time,
+.audit-list code {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+}
+
+.audit-list code {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 900px) {
   .primary-nav {
     display: none;
@@ -817,6 +915,20 @@ footer p {
     align-items: flex-start;
     flex-direction: column;
     gap: 24px;
+  }
+
+  .admin-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .admin-actions > * {
+    width: 100%;
+  }
+
+  .login-card {
+    padding: 32px 24px;
   }
 
   .data-toolbar {

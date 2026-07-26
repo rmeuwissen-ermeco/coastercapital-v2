@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.database import Base, engine
+from app.routers.admin import router as admin_router
+from app.routers.authentication import router as authentication_router
 from app.routers.catalogue import router as catalogue_router
 
 settings = get_settings()
@@ -14,6 +16,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if settings.environment == "production" and len(settings.jwt_secret) < 32:
+        raise RuntimeError("COASTER_JWT_SECRET must contain at least 32 characters")
     if settings.auto_create_schema:
         Base.metadata.create_all(bind=engine)
     yield
@@ -34,6 +38,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(catalogue_router)
+app.include_router(authentication_router)
+app.include_router(admin_router)
 
 
 class HealthResponse(BaseModel):

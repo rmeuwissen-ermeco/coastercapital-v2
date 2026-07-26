@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import {
-  api,
+  adminApi,
   Coaster,
   Manufacturer,
   Page,
@@ -26,9 +26,9 @@ export function CatalogueManager() {
   const load = useCallback(async () => {
     try {
       const [parkPage, manufacturerPage, coasterPage] = await Promise.all([
-        api<Page<Park>>("/v1/parks?limit=100"),
-        api<Page<Manufacturer>>("/v1/manufacturers?limit=100"),
-        api<Page<Coaster>>("/v1/coasters?limit=100"),
+        adminApi<Page<Park>>("/v1/parks?limit=100"),
+        adminApi<Page<Manufacturer>>("/v1/manufacturers?limit=100"),
+        adminApi<Page<Coaster>>("/v1/coasters?limit=100"),
       ]);
       setParks(parkPage.items);
       setManufacturers(manufacturerPage.items);
@@ -50,17 +50,17 @@ export function CatalogueManager() {
     setMessage("Saving…");
     try {
       if (kind === "park") {
-        await api("/v1/parks", {
+        await adminApi("/v1/parks", {
           method: "POST",
           body: JSON.stringify({ name, slug }),
         });
       } else if (kind === "manufacturer") {
-        await api("/v1/manufacturers", {
+        await adminApi("/v1/manufacturers", {
           method: "POST",
           body: JSON.stringify({ name, slug }),
         });
       } else {
-        await api("/v1/coasters", {
+        await adminApi("/v1/coasters", {
           method: "POST",
           body: JSON.stringify({
             name,

@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 
-def test_catalogue_flow(client: TestClient) -> None:
+def test_catalogue_flow(client: TestClient, auth_headers: dict[str, str]) -> None:
     park_response = client.post(
         "/v1/parks",
         json={
@@ -11,6 +11,7 @@ def test_catalogue_flow(client: TestClient) -> None:
             "website_url": "https://www.efteling.com/",
             "summary": "Theme park in the Netherlands.",
         },
+        headers=auth_headers,
     )
     assert park_response.status_code == 201
     park = park_response.json()
@@ -23,6 +24,7 @@ def test_catalogue_flow(client: TestClient) -> None:
             "founded_year": 1988,
             "website_url": "https://www.bolliger-mabillard.com/",
         },
+        headers=auth_headers,
     )
     assert manufacturer_response.status_code == 201
     manufacturer = manufacturer_response.json()
@@ -40,6 +42,7 @@ def test_catalogue_flow(client: TestClient) -> None:
             "speed_kmh": 90,
             "inversions": 2,
         },
+        headers=auth_headers,
     )
     assert coaster_response.status_code == 201
     coaster = coaster_response.json()
@@ -54,16 +57,25 @@ def test_catalogue_flow(client: TestClient) -> None:
     assert stats_response.json() == {"parks": 1, "manufacturers": 1, "coasters": 1}
 
 
-def test_duplicate_park_slug_returns_conflict(client: TestClient) -> None:
+def test_duplicate_park_slug_returns_conflict(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
     payload = {"name": "Efteling", "slug": "efteling"}
-    assert client.post("/v1/parks", json=payload).status_code == 201
-    response = client.post("/v1/parks", json=payload)
+    assert client.post("/v1/parks", json=payload, headers=auth_headers).status_code == 201
+    response = client.post("/v1/parks", json=payload, headers=auth_headers)
     assert response.status_code == 409
 
 
-def test_invalid_coordinates_are_rejected(client: TestClient) -> None:
+def test_invalid_coordinates_are_rejected(client: TestClient, auth_headers: dict[str, str]) -> None:
     response = client.post(
         "/v1/parks",
         json={"name": "Invalid park", "slug": "invalid-park", "latitude": 100},
+        headers=auth_headers,
     )
     assert response.status_code == 422
+
+
+def test_catalogue_writes_require_authentication(client: TestClient) -> None:
+    response = client.post("/v1/parks", json={"name": "Efteling", "slug": "efteling"})
+
+    assert response.status_code == 401

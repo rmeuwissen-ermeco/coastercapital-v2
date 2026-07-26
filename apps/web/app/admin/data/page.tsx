@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CatalogueManager } from "@/components/catalogue-manager";
+import { LogoutButton } from "@/components/logout-button";
 
 export default function AdminDataPage() {
   return (
@@ -14,7 +15,7 @@ export default function AdminDataPage() {
           <Link className="active" href="/admin/data">
             Data
           </Link>
-          <a href="#">Review</a>
+          <Link href="/admin/audit">Audit</Link>
           <a href="#">Sources</a>
         </nav>
       </aside>
@@ -25,9 +26,12 @@ export default function AdminDataPage() {
             <h1>Data core</h1>
             <p>Create and inspect records through the live API.</p>
           </div>
-          <Link className="tonal-button" href="/">
-            View public site
-          </Link>
+          <div className="admin-actions">
+            <Link className="tonal-button" href="/">
+              View public site
+            </Link>
+            <LogoutButton />
+          </div>
         </header>
         <CatalogueManager />
       </section>

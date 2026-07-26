@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogoutButton } from "@/components/logout-button";
 
 const modules = [
   ["Parks", "Canonical park records, locations and source coverage"],
@@ -19,7 +20,7 @@ export default function AdminPage() {
             Overview
           </a>
           <Link href="/admin/data">Data</Link>
-          <a href="#">Review</a>
+          <Link href="/admin/audit">Audit</Link>
           <a href="#">Sources</a>
         </nav>
       </aside>
@@ -30,15 +31,18 @@ export default function AdminPage() {
             <h1>Good morning</h1>
             <p>Manage canonical data and review source-backed proposals.</p>
           </div>
-          <Link className="filled-button" href="/admin/data">
-            Add record
-          </Link>
+          <div className="admin-actions">
+            <Link className="filled-button" href="/admin/data">
+              Add record
+            </Link>
+            <LogoutButton />
+          </div>
         </header>
         <div className="admin-summary">
           <article>
             <span>Pending proposals</span>
             <strong>0</strong>
-            <a href="#">Open review queue</a>
+            <Link href="/admin/audit">Open audit history</Link>
           </article>
           <article>
             <span>Source health</span>
