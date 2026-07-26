@@ -21,6 +21,7 @@ development.
 
 ```bash
 npm install
+cp apps/web/.env.example apps/web/.env.local
 npm run dev
 ```
 
@@ -33,6 +34,8 @@ cd apps/api
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+alembic upgrade head
+python -m app.seed
 uvicorn app.main:app --reload
 ```
 
@@ -40,6 +43,13 @@ Open <http://127.0.0.1:8000/health> or <http://127.0.0.1:8000/docs>.
 
 ## Current status
 
-Run 1 establishes the Material Design 3 application shell, API health contract and
-architecture boundaries. CRUD, authentication and AI extraction follow in later
-checkpoints.
+Run 2 adds the first working vertical slice: catalogue migrations, validated CRUD,
+global search, live statistics, seed data and a functional admin data screen.
+Authentication, provenance workflows and AI extraction follow in later checkpoints.
+
+## Managed deployment
+
+- Vercel deploys `apps/web`; set `NEXT_PUBLIC_API_URL` to the public Render API URL.
+- Render deploys `apps/api`; use the commands and environment variables in
+  [`docs/deployment.md`](docs/deployment.md).
+- Neon provides PostgreSQL; no local or production Docker setup is required.

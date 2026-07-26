@@ -34,9 +34,9 @@ can be deployed directly from GitHub.
 - Commercial visibility is explicit per field and source licence.
 - Stable identifiers do not encode names or mutable business meaning.
 
-## Run 1 scope
+## Run 2 scope
 
-Run 1 establishes the repository, Material Design 3 foundations, public and admin shells,
-FastAPI contract and deployment boundaries. It intentionally does not yet implement CRUD,
-authentication, crawling or canonical database migrations.
-
+Run 2 implements the first catalogue core on these boundaries: PostgreSQL-compatible
+migrations, countries, parks, manufacturers and coasters, validated versioned CRUD,
+search and a live administration screen. Provenance, authentication, crawling and
+commercial API access remain separate later runs.
