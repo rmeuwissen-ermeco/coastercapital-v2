@@ -132,3 +132,42 @@ def test_rejected_proposal_does_not_change_coaster(
     assert response.status_code == 200
     current = client.get("/v1/coasters?query=Baron").json()["items"][0]
     assert current["speed_kmh"] is None
+
+
+
+def test_wikimedia_requests_include_identifying_user_agent() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/w/api.php":
+            return httpx.Response(200, json={"search": [{"id": "Q123"}]})
+        return httpx.Response(
+            200,
+            json={
+                "entities": {
+                    "Q123": {
+                        "id": "Q123",
+                        "claims": {},
+                        "sitelinks": {},
+                    }
+                }
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        qid, wikipedia_title, candidates = fetch_candidates(
+            coaster_name="Python",
+            park_name="Efteling",
+            client=http,
+        )
+
+    assert qid == "Q123"
+    assert wikipedia_title is None
+    assert candidates == []
+    assert len(requests) == 2
+    for request in requests:
+        user_agent = request.headers["User-Agent"]
+        assert user_agent.startswith("CoasterCapital/1.0")
+        assert "github.com/rmeuwissen-ermeco/coastercapital-v2" in user_agent
+        assert request.headers["Accept"] == "application/json"
