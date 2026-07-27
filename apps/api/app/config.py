@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     admin_email: str | None = None
     admin_password: str | None = None
     openai_api_key: str | None = None
-    openai_model: str = "gpt-5.6"
+    openai_model: str = "gpt-5.6-sol"
     research_timeout_seconds: float = 25.0
     research_max_page_bytes: int = 1_500_000
 

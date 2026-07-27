@@ -20,6 +20,7 @@ RCDB_HOSTS = {"rcdb.com", "www.rcdb.com"}
 TAG_RE = re.compile(r"<[^>]+>")
 SCRIPT_RE = re.compile(r"<(script|style|svg)\b[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
 SPACE_RE = re.compile(r"\s+")
+NUMBER_RE = r"([0-9]+(?:,[0-9]{3})+\.[0-9]+|[0-9]+,[0-9]+|[0-9]+(?:\.[0-9]+)?)"
 JSON_SCALAR_SCHEMA = {
     "anyOf": [
         {"type": "string"},
@@ -51,6 +52,15 @@ class SynthesisResult:
     supporting_indexes: tuple[int, ...]
 
 
+@dataclass(frozen=True)
+class PageResult:
+    text: str
+    final_url: str
+    http_status: int
+    title: str | None
+    content_bytes: int
+
+
 def validate_public_https_url(url: str, *, rcdb_only: bool = False) -> str:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower().rstrip(".")
@@ -77,9 +87,16 @@ def fetch_page_text(
     *,
     client: httpx.Client | None = None,
 ) -> str:
-    url = validate_public_https_url(
-        source.url, rcdb_only=source.source_type == "rcdb"
-    )
+    return fetch_page(source, settings, client=client).text
+
+
+def fetch_page(
+    source: PageSource,
+    settings: Settings,
+    *,
+    client: httpx.Client | None = None,
+) -> PageResult:
+    url = validate_public_https_url(source.url, rcdb_only=source.source_type == "rcdb")
     owns_client = client is None
     http = client or httpx.Client(
         timeout=settings.research_timeout_seconds,
@@ -90,9 +107,7 @@ def fetch_page_text(
         response = None
         current_url = url
         for _ in range(6):
-            validate_public_https_url(
-                current_url, rcdb_only=source.source_type == "rcdb"
-            )
+            validate_public_https_url(current_url, rcdb_only=source.source_type == "rcdb")
             response = http.get(current_url, follow_redirects=False)
             if not response.is_redirect:
                 break
@@ -109,7 +124,18 @@ def fetch_page_text(
             raise ResearchError(f"Unsupported content type for {source.label}")
         if len(response.content) > settings.research_max_page_bytes:
             raise ResearchError(f"Source page is too large: {source.label}")
-        return _html_to_text(response.text)
+        title_match = re.search(
+            r"<title\b[^>]*>(.*?)</title>", response.text, re.IGNORECASE | re.DOTALL
+        )
+        return PageResult(
+            text=_html_to_text(response.text),
+            final_url=str(response.url),
+            http_status=response.status_code,
+            title=(
+                SPACE_RE.sub(" ", unescape(title_match.group(1))).strip() if title_match else None
+            ),
+            content_bytes=len(response.content),
+        )
     except httpx.HTTPError as exc:
         raise ResearchError(f"Could not fetch {source.label}: {exc}") from exc
     finally:
@@ -121,6 +147,135 @@ def _html_to_text(html: str) -> str:
     clean = SCRIPT_RE.sub(" ", html)
     clean = TAG_RE.sub(" ", clean)
     return SPACE_RE.sub(" ", unescape(clean)).strip()[:80_000]
+
+
+def deterministic_assertions(
+    *,
+    entity_type: models.EnrichmentEntityType,
+    entity_name: str,
+    context_name: str,
+    source: PageSource,
+    page_text: str,
+) -> list[EvidenceCandidate]:
+    """Extract conservative, explicit facts without using a language model."""
+    if entity_type != models.EnrichmentEntityType.COASTER:
+        return []
+    identity_text = page_text[:12_000].casefold()
+    entity_tokens = [
+        token for token in re.findall(r"\w+", entity_name.casefold()) if len(token) > 1
+    ]
+    if not entity_tokens or not all(token in identity_text for token in entity_tokens):
+        raise ResearchError(f"Fetched page does not identify the selected coaster “{entity_name}”")
+    if source.source_type == "rcdb" and context_name.casefold() not in identity_text:
+        raise ResearchError(f"RCDB record does not mention the expected park “{context_name}”")
+    candidates: list[EvidenceCandidate] = []
+    mappings = (
+        ("length_m", ("length", "track length"), "length"),
+        ("height_m", ("height",), "height"),
+        ("drop_m", ("drop", "free fall"), "drop"),
+        ("speed_kmh", ("speed",), "speed"),
+        ("inversions", ("inversions",), "integer"),
+        ("capacity_pph", ("capacity",), "capacity"),
+    )
+    for field_name, labels, kind in mappings:
+        found = _find_labeled_value(page_text, labels, kind)
+        if found is None:
+            continue
+        value, quote = found
+        candidates.append(
+            EvidenceCandidate(
+                field_name=field_name,
+                value=value,
+                source_type=source.source_type,
+                source_url=source.url,
+                source_label=source.label,
+                confidence=0.96 if source.is_primary else 0.91,
+                raw_value={"quote": quote, "extractor": "deterministic"},
+                is_primary=source.is_primary,
+                independence_key=urlparse(source.url).hostname,
+            )
+        )
+    opened = _find_opening_date(page_text)
+    if opened:
+        candidates.append(
+            EvidenceCandidate(
+                field_name="opened_on",
+                value=opened[0],
+                source_type=source.source_type,
+                source_url=source.url,
+                source_label=source.label,
+                confidence=0.96 if source.is_primary else 0.91,
+                raw_value={"quote": opened[1], "extractor": "deterministic"},
+                is_primary=source.is_primary,
+                independence_key=urlparse(source.url).hostname,
+            )
+        )
+    return candidates
+
+
+def _find_labeled_value(
+    text: str, labels: tuple[str, ...], kind: str
+) -> tuple[float | int, str] | None:
+    label_pattern = "|".join(re.escape(label) for label in labels)
+    units = r"km/h|kph|mph|m|metres?|meters?|ft|feet|riders? per hour"
+    patterns = [
+        rf"\b(?:{label_pattern})\b\s*(?:is|of|:)?\s*{NUMBER_RE}\s*({units})?",
+        (
+            rf"{NUMBER_RE}\s*({units})\s+(?:[^. ]+\s+){{0,3}}"
+            rf"(?:{label_pattern})\b"
+        ),
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        groups = match.groups()
+        raw_number = groups[0]
+        raw_number = (
+            raw_number.replace(",", "")
+            if "," in raw_number and "." in raw_number
+            else raw_number.replace(",", ".")
+        )
+        unit = (groups[1] or "").casefold()
+        value: float | int = float(raw_number)
+        if kind == "integer" or kind == "capacity":
+            value = round(value)
+        elif kind == "speed":
+            if unit == "mph":
+                value *= 1.609344
+            elif unit not in {"km/h", "kph"}:
+                continue
+            value = round(value, 3)
+        else:
+            if unit in {"ft", "feet"}:
+                value *= 0.3048
+            elif unit not in {"m", "metre", "metres", "meter", "meters"}:
+                continue
+            value = round(value, 3)
+        return value, match.group(0)
+    return None
+
+
+def _find_opening_date(text: str) -> tuple[str, str] | None:
+    match = re.search(
+        r"\b(?:operating since|opened(?: on)?|opening date)\s*:?\s*"
+        r"(?:(\d{1,2})/(\d{1,2})/(\d{4})|(\d{4})-(\d{2})-(\d{2}))",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    if match.group(1):
+        month, day, year = (int(match.group(index)) for index in (1, 2, 3))
+    else:
+        year, month, day = (int(match.group(index)) for index in (4, 5, 6))
+    try:
+        from datetime import date
+
+        value = date(year, month, day).isoformat()
+    except ValueError:
+        return None
+    return value, match.group(0)
 
 
 def extract_assertions(
@@ -135,11 +290,7 @@ def extract_assertions(
 ) -> list[EvidenceCandidate]:
     if not settings.openai_api_key:
         return []
-    definitions = [
-        item
-        for item in data_catalog.FIELDS
-        if item.entity_type == entity_type
-    ]
+    definitions = [item for item in data_catalog.FIELDS if item.entity_type == entity_type]
     allowed = {
         item.field_name: {
             "type": item.data_type,

@@ -1,5 +1,26 @@
 # Canonical Research and Enrichment Pipeline
 
+## Run 6.1 production research
+
+The source check resolves a coaster against multiple Wikidata queries and languages,
+ranks matches using coaster name, park and entity description, and rejects ambiguous
+results instead of accepting the first hit. A confirmed entity can discover the
+coaster-specific official URL (`P856`) and RCDB record (`P2751`). Manually supplied URLs
+take precedence and remain visible in the stored job report.
+
+RCDB and explicitly labelled page facts are parsed deterministically before AI runs.
+Wikidata and RCDB therefore remain useful with AI switched off. AI supplements these
+facts for unstructured official prose and compares assertions; it never becomes a source
+itself. Selecting AI without `COASTER_OPENAI_API_KEY` returns a clear validation error.
+
+Every source report records requested and final URL, discovery method, HTTP status, page
+title, entity match, deterministic and AI assertion counts, and a precise rejection
+reason. A general park homepage is never substituted for a coaster-specific official page.
+
+Production acceptance includes manually reviewed checks for Python (`Q15727`, RCDB `897`)
+and Baron 1898 (`Q18285730`, RCDB `12083`), plus ambiguous names, missing official URLs,
+an incorrect RCDB URL, and an official page without deterministic facts.
+
 ## Principle
 
 Sources do not define truth. They provide field-level assertions. Coaster Capital
@@ -108,7 +129,7 @@ Add these variables to the API service:
 
 ```text
 COASTER_OPENAI_API_KEY=<secret>
-COASTER_OPENAI_MODEL=gpt-5.6
+COASTER_OPENAI_MODEL=gpt-5.6-sol
 COASTER_RESEARCH_TIMEOUT_SECONDS=25
 COASTER_RESEARCH_MAX_PAGE_BYTES=1500000
 ```
