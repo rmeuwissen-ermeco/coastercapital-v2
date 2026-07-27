@@ -30,6 +30,11 @@ const FIELD_LABELS: Record<string, string> = {
 
 type EntityType = "coaster" | "park" | "manufacturer";
 type EntityOption = { id: string; name: string; subtitle: string };
+type ResearchCapabilities = {
+  ai_available: boolean;
+  ai_model: string | null;
+  deterministic_research_available: boolean;
+};
 
 export function EnrichmentReview() {
   const [coasters, setCoasters] = useState<Coaster[]>([]);
@@ -42,22 +47,27 @@ export function EnrichmentReview() {
   const [officialUrl, setOfficialUrl] = useState("");
   const [rcdbUrl, setRcdbUrl] = useState("");
   const [useAi, setUseAi] = useState(true);
+  const [capabilities, setCapabilities] = useState<ResearchCapabilities | null>(null);
   const [message, setMessage] = useState("Loading enrichment workspace…");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [coasterPage, parkPage, manufacturerPage, jobList] = await Promise.all([
+      const [coasterPage, parkPage, manufacturerPage, jobList, researchCapabilities] =
+        await Promise.all([
         adminApi<Page<Coaster>>("/v1/coasters?limit=100"),
         adminApi<Page<Park>>("/v1/parks?limit=100"),
         adminApi<Page<Manufacturer>>("/v1/manufacturers?limit=100"),
         adminApi<EnrichmentJob[]>("/v1/admin/enrichment/jobs"),
+        adminApi<ResearchCapabilities>("/v1/admin/enrichment/capabilities"),
       ]);
       setCoasters(coasterPage.items);
       setParks(parkPage.items);
       setManufacturers(manufacturerPage.items);
       setEntityId((current) => current || coasterPage.items[0]?.id || "");
       setJobs(jobList);
+      setCapabilities(researchCapabilities);
+      if (!researchCapabilities.ai_available) setUseAi(false);
       setMessage("Ready · canonical data remains unchanged until approval");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load enrichment data");
@@ -117,9 +127,6 @@ export function EnrichmentReview() {
           use_ai: useAi,
         }),
       });
-      setWikidataId("");
-      setOfficialUrl("");
-      setRcdbUrl("");
       await load();
       setMessage("Source check complete · review each proposal below");
     } catch (error) {
@@ -216,11 +223,19 @@ export function EnrichmentReview() {
           <label className="research-toggle">
             <input
               checked={useAi}
+              disabled={!capabilities?.ai_available}
               type="checkbox"
               onChange={(event) => setUseAi(event.target.checked)}
             />
             Use AI to extract and compare source assertions
+            {capabilities?.ai_model ? ` (${capabilities.ai_model})` : ""}
           </label>
+          {capabilities && !capabilities.ai_available && (
+            <p className="pipeline-warning">
+              AI is unavailable until COASTER_OPENAI_API_KEY is configured. Deterministic
+              Wikidata and RCDB research remains available.
+            </p>
+          )}
           <button className="filled-button" disabled={busy || !entityId} type="submit">
             {busy ? "Working…" : "Start source check"}
           </button>
@@ -274,13 +289,48 @@ function SourceReport({ report }: { report: Record<string, unknown> }) {
       {sources.map((name) => {
         const detail = report[name] as Record<string, unknown> | undefined;
         if (!detail) return null;
+        const url =
+          typeof detail.final_url === "string"
+            ? detail.final_url
+            : typeof detail.url === "string"
+              ? detail.url
+              : null;
+        const explanation =
+          typeof detail.error === "string"
+            ? detail.error
+            : typeof detail.reason === "string"
+              ? detail.reason
+              : typeof detail.match_reason === "string"
+                ? detail.match_reason
+                : null;
         return (
-          <span className={`source-state source-${String(detail.status)}`} key={name}>
-            {name}: {String(detail.status)}
-            {typeof detail.assertions === "number" ? ` · ${detail.assertions}` : ""}
-          </span>
+          <div className={`source-state source-${String(detail.status)}`} key={name}>
+            <strong>
+              {name}: {String(detail.status)}
+              {typeof detail.assertions === "number" ? ` · ${detail.assertions} facts` : ""}
+            </strong>
+            {url && (
+              <a href={url} rel="noreferrer" target="_blank">
+                {url} ↗
+              </a>
+            )}
+            {typeof detail.http_status === "number" && (
+              <small>
+                HTTP {String(detail.http_status)}
+                {typeof detail.title === "string" ? ` · ${detail.title}` : ""}
+              </small>
+            )}
+            {explanation && <small>{explanation}</small>}
+          </div>
         );
       })}
+      {Array.isArray(report.warnings) && report.warnings.length > 0 && (
+        <div className="source-warnings">
+          {(report.warnings as string[]).map((warning) => (
+            <small key={warning}>{warning}</small>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

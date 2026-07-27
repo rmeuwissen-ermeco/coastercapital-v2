@@ -29,7 +29,7 @@ COASTER_JWT_SECRET=<at least 32 random characters>
 COASTER_ADMIN_EMAIL=<administrator email>
 COASTER_ADMIN_PASSWORD=<long random administrator password>
 COASTER_OPENAI_API_KEY=<OpenAI project API key>
-COASTER_OPENAI_MODEL=gpt-5.6
+COASTER_OPENAI_MODEL=gpt-5.6-sol
 COASTER_RESEARCH_TIMEOUT_SECONDS=25
 COASTER_RESEARCH_MAX_PAGE_BYTES=1500000
 ```
@@ -63,6 +63,11 @@ the versioned API; authenticated admin traffic uses the server proxy.
 Store `COASTER_OPENAI_API_KEY` only as a Render secret. OpenAI is used to extract
 structured assertions from fetched official and RCDB pages and to compare those
 assertions. It is not treated as an independent source.
+
+Create the key inside the OpenAI Platform project used for Coaster Capital and add it
+directly to Render. A ChatGPT subscription is separate from API billing and does not
+generate an application key. Redeploy the API service after changing the secret, then
+verify `GET /v1/admin/enrichment/capabilities` reports `ai_available: true`.
 
 After deployment, verify that the Render build applied migration
 `c6a5e2f84b17`. First run the 25-record manual-review pilot described in

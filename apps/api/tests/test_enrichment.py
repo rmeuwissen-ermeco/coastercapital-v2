@@ -1,6 +1,23 @@
 from fastapi.testclient import TestClient
 
+from app import enrichment
 from app.enrichment import EvidenceCandidate
+
+
+def _wikimedia_result(
+    qid: str,
+    title: str | None,
+    candidates: list[EvidenceCandidate],
+) -> enrichment.WikimediaResult:
+    return enrichment.WikimediaResult(
+        qid=qid,
+        wikipedia_title=title,
+        candidates=candidates,
+        official_url=None,
+        rcdb_url=None,
+        match_confidence=0.99,
+        match_reason="Test fixture",
+    )
 
 
 def _coaster(client: TestClient, headers: dict[str, str]) -> dict:
@@ -40,7 +57,7 @@ def test_source_proposal_requires_review_before_canonical_update(
     coaster = _coaster(client, auth_headers)
 
     def fake_candidates(**_):
-        return (
+        return _wikimedia_result(
             "Q123",
             "Baron 1898",
             [
@@ -56,10 +73,10 @@ def test_source_proposal_requires_review_before_canonical_update(
             ],
         )
 
-    monkeypatch.setattr("app.enrichment.fetch_candidates", fake_candidates)
+    monkeypatch.setattr("app.enrichment.fetch_wikimedia_result", fake_candidates)
     run = client.post(
         "/v1/admin/enrichment/jobs",
-        json={"coaster_id": coaster["id"], "wikidata_id": "Q123"},
+        json={"coaster_id": coaster["id"], "wikidata_id": "Q123", "use_ai": False},
         headers=auth_headers,
     )
     assert run.status_code == 201
@@ -101,8 +118,8 @@ def test_rejected_proposal_does_not_change_coaster(
 ) -> None:
     coaster = _coaster(client, auth_headers)
     monkeypatch.setattr(
-        "app.enrichment.fetch_candidates",
-        lambda **_: (
+        "app.enrichment.fetch_wikimedia_result",
+        lambda **_: _wikimedia_result(
             "Q123",
             None,
             [
@@ -120,7 +137,7 @@ def test_rejected_proposal_does_not_change_coaster(
     )
     job = client.post(
         "/v1/admin/enrichment/jobs",
-        json={"coaster_id": coaster["id"]},
+        json={"coaster_id": coaster["id"], "use_ai": False},
         headers=auth_headers,
     ).json()
     proposal_id = job["proposals"][0]["id"]
@@ -141,8 +158,8 @@ def test_editor_can_correct_value_with_protected_override(
 ) -> None:
     coaster = _coaster(client, auth_headers)
     monkeypatch.setattr(
-        "app.enrichment.fetch_candidates",
-        lambda **_: (
+        "app.enrichment.fetch_wikimedia_result",
+        lambda **_: _wikimedia_result(
             "Q123",
             "Baron 1898",
             [
@@ -160,7 +177,7 @@ def test_editor_can_correct_value_with_protected_override(
     )
     job = client.post(
         "/v1/admin/enrichment/jobs",
-        json={"entity_type": "coaster", "entity_id": coaster["id"]},
+        json={"entity_type": "coaster", "entity_id": coaster["id"], "use_ai": False},
         headers=auth_headers,
     ).json()
     proposal_id = job["proposals"][0]["id"]
@@ -204,8 +221,8 @@ def test_conflicting_sources_create_one_blocked_proposal(
 ) -> None:
     coaster = _coaster(client, auth_headers)
     monkeypatch.setattr(
-        "app.enrichment.fetch_candidates",
-        lambda **_: (
+        "app.enrichment.fetch_wikimedia_result",
+        lambda **_: _wikimedia_result(
             "Q123",
             "Baron 1898",
             [

@@ -61,6 +61,16 @@ def get_catalog(_: AdminUser) -> list[dict]:
     return data_catalog.public_catalog()
 
 
+@router.get("/capabilities")
+def get_capabilities(_: AdminUser) -> dict[str, object]:
+    settings = get_settings()
+    return {
+        "ai_available": bool(settings.openai_api_key),
+        "ai_model": settings.openai_model if settings.openai_api_key else None,
+        "deterministic_research_available": True,
+    }
+
+
 @router.post("/jobs", response_model=schemas.EnrichmentJobRead, status_code=201)
 def create_job(
     payload: schemas.EnrichmentJobCreate, db: DbSession, actor: AdminUser
@@ -69,6 +79,15 @@ def create_job(
     if entity_id is None:
         raise HTTPException(status_code=422, detail="entity_id is required")
     entity = _get_entity(db, payload.entity_type, entity_id)
+    settings = get_settings()
+    if payload.use_ai and not settings.openai_api_key:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "AI research is selected, but COASTER_OPENAI_API_KEY is not configured. "
+                "Configure the Render secret or turn off AI for deterministic research."
+            ),
+        )
     context_name = ""
     if isinstance(entity, models.Coaster):
         db.refresh(entity, attribute_names=["park"])
@@ -90,11 +109,10 @@ def create_job(
     db.commit()
     db.refresh(job)
     try:
-        settings = get_settings()
         source_report: dict[str, object] = {
             "wikimedia": {"status": "pending", "assertions": 0},
-            "official": {"status": "not_requested", "assertions": 0},
-            "rcdb": {"status": "not_requested", "assertions": 0},
+            "official": {"status": "not_discovered", "assertions": 0},
+            "rcdb": {"status": "not_discovered", "assertions": 0},
             "ai": {
                 "status": (
                     "enabled"
@@ -107,50 +125,94 @@ def create_job(
             "warnings": [],
         }
         candidates: list[enrichment.EvidenceCandidate] = []
+        discovered_official_url: str | None = None
+        discovered_rcdb_url: str | None = None
         try:
-            qid, wikipedia_title, wikimedia_candidates = enrichment.fetch_candidates(
+            wikimedia = enrichment.fetch_wikimedia_result(
                 coaster_name=entity.name,
                 park_name=context_name,
                 wikidata_id=payload.wikidata_id,
             )
-            candidates.extend(wikimedia_candidates)
-            job.wikidata_id = qid
-            job.wikipedia_title = wikipedia_title
+            candidates.extend(wikimedia.candidates)
+            job.wikidata_id = wikimedia.qid
+            job.wikipedia_title = wikimedia.wikipedia_title
+            job.entity_match_confidence = wikimedia.match_confidence
+            discovered_official_url = wikimedia.official_url
+            discovered_rcdb_url = wikimedia.rcdb_url
             source_report["wikimedia"].update(
-                status="ok", assertions=len(wikimedia_candidates)
+                status="ok",
+                assertions=len(wikimedia.candidates),
+                qid=wikimedia.qid,
+                match_confidence=wikimedia.match_confidence,
+                match_reason=wikimedia.match_reason,
+                url=f"https://www.wikidata.org/wiki/{wikimedia.qid}",
             )
         except enrichment.EnrichmentLookupError as exc:
             source_report["wikimedia"].update(status="failed", error=str(exc))
             source_report["warnings"].append(str(exc))
-        job.entity_match_confidence = 0.99 if payload.wikidata_id else 0.90
-        page_sources = _page_sources(payload, entity)
+        if job.entity_match_confidence is None:
+            job.entity_match_confidence = 0.99 if payload.wikidata_id else 0.75
+        page_sources = _page_sources(
+            payload,
+            entity,
+            discovered_official_url=discovered_official_url,
+            discovered_rcdb_url=discovered_rcdb_url,
+        )
         for source in page_sources:
             source_state = source_report[source.source_type]
+            source_state.update(
+                status="fetching",
+                url=source.url,
+                discovery=(
+                    "manual"
+                    if (source.source_type == "official" and payload.official_url)
+                    or (source.source_type == "rcdb" and payload.rcdb_url)
+                    else "wikidata"
+                ),
+            )
             try:
-                page_text = research.fetch_page_text(source, settings)
-                extracted = (
+                page = research.fetch_page(source, settings)
+                deterministic = research.deterministic_assertions(
+                    entity_type=payload.entity_type,
+                    entity_name=entity.name,
+                    context_name=context_name,
+                    source=source,
+                    page_text=page.text,
+                )
+                ai_extracted = (
                     research.extract_assertions(
                         entity_type=payload.entity_type,
                         entity_name=entity.name,
                         context_name=context_name,
                         source=source,
-                        page_text=page_text,
+                        page_text=page.text,
                         settings=settings,
                     )
                     if payload.use_ai
                     else []
                 )
+                extracted = _merge_source_assertions(deterministic, ai_extracted)
                 candidates.extend(extracted)
-                source_state.update(status="ok", assertions=len(extracted))
+                source_state.update(
+                    status="ok" if extracted else "no_assertions",
+                    assertions=len(extracted),
+                    deterministic_assertions=len(deterministic),
+                    ai_assertions=len(ai_extracted),
+                    final_url=page.final_url,
+                    http_status=page.http_status,
+                    title=page.title,
+                    content_bytes=page.content_bytes,
+                    matched_entity=entity.name,
+                )
+                if not extracted:
+                    source_state["reason"] = (
+                        "Page matched the entity but contained no supported canonical fields"
+                    )
             except research.ResearchError as exc:
                 source_state.update(status="failed", error=str(exc))
                 source_report["warnings"].append(str(exc))
         job.source_report = source_report
-        job.ai_model = (
-            settings.openai_model
-            if payload.use_ai and settings.openai_api_key
-            else None
-        )
+        job.ai_model = settings.openai_model if payload.use_ai and settings.openai_api_key else None
         if not candidates:
             raise research.ResearchError(
                 "No usable source assertions were found; canonical data was not changed"
@@ -266,14 +328,16 @@ def create_job(
 def _page_sources(
     payload: schemas.EnrichmentJobCreate,
     entity: models.Coaster | models.Park | models.Manufacturer,
+    *,
+    discovered_official_url: str | None = None,
+    discovered_rcdb_url: str | None = None,
 ) -> list[research.PageSource]:
     sources: list[research.PageSource] = []
     official_url = str(payload.official_url) if payload.official_url else None
-    if official_url is None:
-        if isinstance(entity, (models.Park, models.Manufacturer)):
-            official_url = entity.website_url
-        elif isinstance(entity, models.Coaster):
-            official_url = entity.park.website_url
+    if official_url is None and discovered_official_url:
+        official_url = discovered_official_url
+    if official_url is None and isinstance(entity, (models.Park, models.Manufacturer)):
+        official_url = entity.website_url
     if official_url:
         sources.append(
             research.PageSource(
@@ -283,16 +347,28 @@ def _page_sources(
                 is_primary=True,
             )
         )
-    if payload.rcdb_url:
+    rcdb_url = str(payload.rcdb_url) if payload.rcdb_url else discovered_rcdb_url
+    if rcdb_url:
         sources.append(
             research.PageSource(
                 source_type="rcdb",
-                url=str(payload.rcdb_url),
+                url=rcdb_url,
                 label=f"RCDB · {entity.name}",
                 is_primary=False,
             )
         )
     return sources
+
+
+def _merge_source_assertions(
+    deterministic: list[enrichment.EvidenceCandidate],
+    ai_extracted: list[enrichment.EvidenceCandidate],
+) -> list[enrichment.EvidenceCandidate]:
+    """Prefer deterministic parsing for the same field and retain AI-only fields."""
+    merged = {item.field_name: item for item in ai_extracted}
+    for item in deterministic:
+        merged[item.field_name] = item
+    return list(merged.values())
 
 
 def _select_candidate(
@@ -316,13 +392,9 @@ def _select_candidate(
     return max(candidates, key=lambda item: (item.is_primary, item.confidence))
 
 
-def _agreement(
-    candidates: list[enrichment.EvidenceCandidate], selected_value: object
-) -> float:
+def _agreement(candidates: list[enrichment.EvidenceCandidate], selected_value: object) -> float:
     selected = str(selected_value).strip().casefold()
-    agreeing = sum(
-        1 for item in candidates if str(item.value).strip().casefold() == selected
-    )
+    agreeing = sum(1 for item in candidates if str(item.value).strip().casefold() == selected)
     return agreeing / len(candidates)
 
 
@@ -360,14 +432,10 @@ def review_proposal(
         raise HTTPException(status_code=409, detail="Proposal has already been reviewed")
     entity = _get_entity(db, proposal.job.entity_type, proposal.job.entity_id)
     if payload.decision == models.ProposalStatus.ACCEPTED:
-        definition = data_catalog.field_definition(
-            proposal.job.entity_type, proposal.field_name
-        )
+        definition = data_catalog.field_definition(proposal.job.entity_type, proposal.field_name)
         if definition is None:
             raise HTTPException(status_code=422, detail="Field cannot be applied automatically")
-        final_value = (
-            payload.value if payload.value is not None else proposal.proposed_value
-        )
+        final_value = payload.value if payload.value is not None else proposal.proposed_value
         if not data_catalog.validate_value(definition, final_value):
             raise HTTPException(status_code=422, detail="Value does not satisfy the data catalog")
         is_override = payload.value is not None and payload.value != proposal.proposed_value
